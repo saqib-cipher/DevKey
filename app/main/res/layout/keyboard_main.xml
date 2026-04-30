@@ -61,6 +61,42 @@
             android:paddingStart="4dp"
             android:paddingEnd="4dp" />
     </HorizontalScrollView>
+    
+    <!-- ══════════════════════════════════════════════════════
+         ROW 4 ─ Symbol toolbar (scrollable)
+    ══════════════════════════════════════════════════════ -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:scrollbars="none"
+        android:background="#141428">
+
+        <LinearLayout
+            android:id="@+id/row_symbols"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
+    </HorizontalScrollView>
+
+    <!-- ══════════════════════════════════════════════════════
+         ROW 5 ─ Snippet shortcuts (scrollable)
+    ══════════════════════════════════════════════════════ -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="42dp"
+        android:scrollbars="none"
+        android:background="#0D0D1F">
+
+        <LinearLayout
+            android:id="@+id/row_snippets"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
+    </HorizontalScrollView>
 
     <!-- ══════════════════════════════════════════════════════
          ROW 0 ─ Numbers (1–0)
@@ -134,42 +170,6 @@
     </LinearLayout>
 
     <!-- ══════════════════════════════════════════════════════
-         ROW 4 ─ Symbol toolbar (scrollable)
-    ══════════════════════════════════════════════════════ -->
-    <HorizontalScrollView
-        android:layout_width="match_parent"
-        android:layout_height="46dp"
-        android:scrollbars="none"
-        android:background="#141428">
-
-        <LinearLayout
-            android:id="@+id/row_symbols"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:paddingStart="4dp"
-            android:paddingEnd="4dp" />
-    </HorizontalScrollView>
-
-    <!-- ══════════════════════════════════════════════════════
-         ROW 5 ─ Snippet shortcuts (scrollable)
-    ══════════════════════════════════════════════════════ -->
-    <HorizontalScrollView
-        android:layout_width="match_parent"
-        android:layout_height="42dp"
-        android:scrollbars="none"
-        android:background="#0D0D1F">
-
-        <LinearLayout
-            android:id="@+id/row_snippets"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:paddingStart="4dp"
-            android:paddingEnd="4dp" />
-    </HorizontalScrollView>
-
-    <!-- ══════════════════════════════════════════════════════
          ROW 6 ─ Bottom action row
          Lang+Settings | Symbols | Emoji | Undo | Redo | Space | Arrows | Enter
     ══════════════════════════════════════════════════════ -->
@@ -198,7 +198,7 @@
             android:id="@+id/btn_symbols_panel"
             android:layout_width="42dp"
             android:layout_height="40dp"
-            android:text="?123"
+            android:text="123"
             android:textSize="11sp"
             android:textColor="#E8E8FF"
             android:background="#252545"
@@ -226,17 +226,6 @@
             android:background="#252545"
             android:layout_marginStart="2dp" />
 
-        <!-- Redo -->
-        <Button
-            android:id="@+id/btn_redo"
-            android:layout_width="38dp"
-            android:layout_height="40dp"
-            android:text="↪"
-            android:textSize="14sp"
-            android:textColor="#E8E8FF"
-            android:background="#252545"
-            android:layout_marginStart="2dp" />
-
         <!-- Space -->
         <Button
             android:id="@+id/btn_space"
@@ -249,7 +238,18 @@
             android:background="#252545"
             android:layout_marginStart="2dp"
             android:layout_marginEnd="2dp" />
-
+        
+        <!-- Redo -->
+        <Button
+            android:id="@+id/btn_redo"
+            android:layout_width="38dp"
+            android:layout_height="40dp"
+            android:text="↪"
+            android:textSize="14sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545"
+            android:layout_marginStart="2dp" />
+            
         <!-- Arrow cluster (vertical) -->
         <LinearLayout
             android:layout_width="wrap_content"
