@@ -10,6 +10,9 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.card.MaterialCardView;
+
 import java.util.List;
 
 /**
@@ -54,30 +57,46 @@ final class UIRenderer {
     }
 
     // ─── Key / chip factory ───────────────────────────────────────────────────
+    /**
+     * Builds a {@link MaterialButton}-based key with Material 3 Expressive
+     * defaults (rounded corners, ripple, no inset). The runtime palette still
+     * wins via {@link #roundedFill(int, int)} on top.
+     */
     Button makeKey(String label, int bgColor, int textColor) {
-        Button btn = new Button(ime);
+        MaterialButton btn = new MaterialButton(ime, null,
+                com.google.android.material.R.attr.materialButtonStyle);
         btn.setText(label);
         btn.setTextSize(14f);
         btn.setTextColor(textColor);
-        btn.setBackground(roundedFill(bgColor, ime.dp(10)));
-        btn.setPadding(2, 2, 2, 2);
         btn.setAllCaps(false);
+        btn.setInsetTop(0);
+        btn.setInsetBottom(0);
+        btn.setMinHeight(0);
+        btn.setMinWidth(0);
+        btn.setCornerRadius(ime.dp(12));
+        btn.setPadding(ime.dp(2), ime.dp(2), ime.dp(2), ime.dp(2));
+        // Runtime theme override (per-user accent) — wins over the M3 default.
+        btn.setBackground(roundedFill(bgColor, ime.dp(12)));
         return btn;
     }
 
     /**
-     * Builds a Material-3-style chip for the suggestion strip. The "best"
+     * Builds a Material 3 Expressive chip for the suggestion strip. The "best"
      * suggestion gets a stronger fill + bold weight so the user can spot the
      * primary candidate at a glance.
      */
     Button makeChip(String label, int bgColor, int textColor, boolean primary) {
-        Button btn = new Button(ime);
+        MaterialButton btn = new MaterialButton(ime, null,
+                com.google.android.material.R.attr.materialButtonStyle);
         btn.setText(label);
         btn.setAllCaps(false);
         btn.setTextSize(13f);
         btn.setTextColor(textColor);
         btn.setTypeface(primary ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+        btn.setInsetTop(0);
+        btn.setInsetBottom(0);
         btn.setPadding(ime.dp(12), 0, ime.dp(12), 0);
+        btn.setCornerRadius(ime.dp(18));
         btn.setBackground(roundedFill(bgColor, ime.dp(18)));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ime.dp(32));
@@ -119,18 +138,22 @@ final class UIRenderer {
             clearBtn.setVisibility(View.GONE);
         }
 
-        // ── Category tabs ──
+        // ── Category tabs (Material 3 Expressive icon-style buttons) ──
         LinearLayout tabRow = panelView.findViewById(R.id.emoji_category_tabs);
         tabRow.removeAllViews();
         for (int i = 0; i < EmojiData.CATEGORY_KEYS.length; i++) {
             final String key = EmojiData.CATEGORY_KEYS[i];
             String label = EmojiData.CATEGORY_NAMES[i];
             boolean active = key.equals(engine.getCategory()) && !engine.isSearching();
-            Button tab = new Button(ime);
+            MaterialButton tab = new MaterialButton(ime, null,
+                    com.google.android.material.R.attr.materialButtonStyle);
             tab.setText(label);
             tab.setAllCaps(false);
             tab.setTextSize(label.length() > 2 ? 11f : 18f);
             tab.setTextColor(active ? accent : textCol);
+            tab.setInsetTop(0);
+            tab.setInsetBottom(0);
+            tab.setCornerRadius(ime.dp(18));
             tab.setBackground(roundedFill(active ? CodeKeysIME.blend(keyBg, accent, 0.30f) : keyBg, ime.dp(18)));
             tab.setOnClickListener(v -> onCategory.onCategory(key));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ime.dp(54), ime.dp(34));
@@ -169,10 +192,14 @@ final class UIRenderer {
                 grid.addView(currentRow);
             }
             final String emoji = emojis.get(i);
-            Button btn = new Button(ime);
+            MaterialButton btn = new MaterialButton(ime, null,
+                    com.google.android.material.R.attr.materialButtonStyle);
             btn.setText(emoji);
-            btn.setTextSize(20f);
+            btn.setTextSize(22f);
             btn.setAllCaps(false);
+            btn.setInsetTop(0);
+            btn.setInsetBottom(0);
+            btn.setCornerRadius(ime.dp(12));
             btn.setBackground(roundedFill(keyBg, ime.dp(12)));
             btn.setPadding(0, 0, 0, 0);
             btn.setMinHeight(0);
@@ -235,16 +262,27 @@ final class UIRenderer {
     private View buildClipCard(final ClipboardStore.Entry entry,
                                int keyBg, int textCol, int accent,
                                ClipAction onPaste, ClipAction onPin, ClipAction onDelete) {
-        LinearLayout card = new LinearLayout(ime);
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        card.setBackground(roundedFill(
-                CodeKeysIME.blend(keyBg, accent, entry.pinned ? 0.18f : 0.05f), ime.dp(14)));
+        // ── MaterialCardView wrapper ──
+        MaterialCardView card = new MaterialCardView(ime);
+        card.setRadius(ime.dp(16));
+        card.setCardElevation(0f);
+        card.setStrokeWidth(0);
+        card.setUseCompatPadding(false);
+        card.setCardBackgroundColor(
+                CodeKeysIME.blend(keyBg, accent, entry.pinned ? 0.18f : 0.05f));
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         cardLp.setMargins(ime.dp(4), ime.dp(4), ime.dp(4), ime.dp(4));
         card.setLayoutParams(cardLp);
-        card.setPadding(ime.dp(12), ime.dp(10), ime.dp(8), ime.dp(10));
+
+        // ── Inner row ──
+        LinearLayout row = new LinearLayout(ime);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setPadding(ime.dp(12), ime.dp(10), ime.dp(8), ime.dp(10));
+        row.setLayoutParams(new MaterialCardView.LayoutParams(
+                MaterialCardView.LayoutParams.MATCH_PARENT,
+                MaterialCardView.LayoutParams.WRAP_CONTENT));
 
         // Text preview (max 2 lines, ellipsis)
         TextView preview = new TextView(ime);
@@ -258,14 +296,18 @@ final class UIRenderer {
         preview.setLayoutParams(pLp);
         preview.setOnClickListener(v -> onPaste.onEntry(entry));
         preview.setOnLongClickListener(v -> { onDelete.onEntry(entry); return true; });
-        card.addView(preview);
+        row.addView(preview);
 
-        // Pin toggle
-        Button pin = new Button(ime);
+        // Pin toggle (MaterialButton, icon-style)
+        MaterialButton pin = new MaterialButton(ime, null,
+                com.google.android.material.R.attr.materialButtonStyle);
         pin.setText(entry.pinned ? "📌" : "📍");
         pin.setAllCaps(false);
         pin.setTextSize(14f);
         pin.setTextColor(textCol);
+        pin.setInsetTop(0);
+        pin.setInsetBottom(0);
+        pin.setCornerRadius(ime.dp(10));
         pin.setBackground(roundedFill(CodeKeysIME.blend(keyBg, accent, 0.10f), ime.dp(10)));
         pin.setPadding(0, 0, 0, 0);
         pin.setMinHeight(0);
@@ -274,14 +316,18 @@ final class UIRenderer {
         pinLp.setMargins(ime.dp(4), 0, ime.dp(2), 0);
         pin.setLayoutParams(pinLp);
         pin.setOnClickListener(v -> onPin.onEntry(entry));
-        card.addView(pin);
+        row.addView(pin);
 
-        // Delete
-        Button del = new Button(ime);
+        // Delete (MaterialButton, error-tinted)
+        MaterialButton del = new MaterialButton(ime, null,
+                com.google.android.material.R.attr.materialButtonStyle);
         del.setText("✕");
         del.setAllCaps(false);
         del.setTextSize(14f);
         del.setTextColor(0xFFFF6666);
+        del.setInsetTop(0);
+        del.setInsetBottom(0);
+        del.setCornerRadius(ime.dp(10));
         del.setBackground(roundedFill(0x22FF0000, ime.dp(10)));
         del.setPadding(0, 0, 0, 0);
         del.setMinHeight(0);
@@ -290,8 +336,9 @@ final class UIRenderer {
         dLp.setMargins(ime.dp(2), 0, 0, 0);
         del.setLayoutParams(dLp);
         del.setOnClickListener(v -> onDelete.onEntry(entry));
-        card.addView(del);
+        row.addView(del);
 
+        card.addView(row);
         // Make the whole card tappable too — easier touch target.
         card.setOnClickListener(v -> onPaste.onEntry(entry));
         return card;

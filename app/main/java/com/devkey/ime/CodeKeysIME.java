@@ -28,7 +28,6 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
-import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.TextView;
@@ -108,7 +107,9 @@ public class CodeKeysIME extends InputMethodService {
     // Bottom action row
     private Button btnEnter, btnSettings, btnSymbolsPanel, btnEmoji, btnSpace;
     private Button btnUndo, btnRedo;
-    private ImageButton btnArrowLeft, btnArrowRight, btnArrowUp, btnArrowDown;
+    // Arrow keys are MaterialButtons (icon-only) in panel_keyboard.xml — typed
+    // as Button here since we only call View/Button methods on them.
+    private Button btnArrowLeft, btnArrowRight, btnArrowUp, btnArrowDown;
 
     // Keyboard panel children (cached when the panel is built)
     private LinearLayout rowSymbols, rowSnippets, rowNumbers;

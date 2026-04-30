@@ -1,24 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    panel_clipboard.xml — Clipboard history panel.
-    Header bar with "Copy selection" and "Clear unpinned" actions, then a
-    vertically-scrolling list of clipboard cards. Each card has rounded
-    corners and a 2-line preview; tap pastes, long-press deletes, the pin
-    icon toggles "stick to top".
+    panel_clipboard.xml — clipboard history panel.
+    Material 3 Expressive: header bar with "Copy selection" / "Clear unpinned"
+    MaterialButtons, then a vertically-scrolling list of MaterialCardView
+    items (built at runtime by `UIRenderer.fillClipboardPanel()`).
+    Each card has rounded corners, a 2-line preview, tap-to-paste, long-press
+    to delete, and a pin toggle.
 -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical">
 
-    <!-- Header strip -->
+    <!-- ── Header strip ── -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="42dp"
+        android:layout_height="@dimen/clipboard_header_height"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="#141428"
+        android:background="?attr/colorSurface"
         android:paddingStart="12dp"
         android:paddingEnd="6dp">
 
@@ -29,36 +31,35 @@
             android:text="Clipboard"
             android:textSize="13sp"
             android:textStyle="bold"
-            android:textColor="#E8E8FF" />
+            android:textColor="?attr/colorOnSurface" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/clip_copy_selection"
-            android:layout_width="78dp"
+            style="@style/KeyboardKey"
+            android:layout_width="wrap_content"
             android:layout_height="34dp"
+            android:layout_marginEnd="4dp"
             android:text="⧉ Copy"
-            android:textSize="11sp"
-            android:textAllCaps="false"
-            android:textColor="#00E5FF"
-            android:background="#1F1F3D"
-            android:layout_marginEnd="4dp" />
+            android:textSize="11sp" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/clip_clear_all"
-            android:layout_width="78dp"
+            style="@style/KeyboardKey"
+            android:layout_width="wrap_content"
             android:layout_height="34dp"
             android:text="✕ Clear"
             android:textSize="11sp"
-            android:textAllCaps="false"
-            android:textColor="#FF6666"
-            android:background="#220F0F" />
+            app:backgroundTint="?attr/colorErrorContainer"
+            android:textColor="?attr/colorOnErrorContainer" />
     </LinearLayout>
 
-    <!-- Card list -->
+    <!-- ── Card list (runtime-filled) ── -->
     <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="220dp"
+        android:layout_height="@dimen/clipboard_list_height"
         android:scrollbars="none"
-        android:fillViewport="true">
+        android:fillViewport="true"
+        android:background="?attr/colorSurface">
 
         <LinearLayout
             android:id="@+id/clip_list"
