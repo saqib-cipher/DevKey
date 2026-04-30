@@ -1,0 +1,266 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    settings_activity.xml
+    ──────────────────────────────────────────────────────────────────────────
+    The full Settings UI for CodeKeys, separated from Java for readability.
+    Place in: app/src/main/res/layout/settings_activity.xml
+
+    The Java side ({@link com.codekeys.ime.SettingsActivity}) only needs to
+    inflate this layout, look up views by ID, and wire listeners. Theme colors
+    are still applied programmatically because they are user-configurable at
+    runtime, so we keep neutral baseline colors here.
+    ──────────────────────────────────────────────────────────────────────────
+-->
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/settings_scroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="#1A1A2E">
+
+    <LinearLayout
+        android:id="@+id/settings_root"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- ══════════════════════════════════════════════════════
+             Title bar
+        ══════════════════════════════════════════════════════ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="24dp">
+
+            <View
+                android:id="@+id/title_swatch"
+                android:layout_width="6dp"
+                android:layout_height="36dp"
+                android:layout_marginEnd="14dp"
+                android:background="#00E5FF" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="CodeKeys"
+                    android:textSize="26sp"
+                    android:textStyle="bold"
+                    android:textColor="#E8E8FF" />
+
+                <TextView
+                    android:id="@+id/subtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Coding Keyboard Settings"
+                    android:textSize="12sp"
+                    android:textColor="#9494B5" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- ══════════════════════════════════════════════════════
+             Enable IME card
+        ══════════════════════════════════════════════════════ -->
+        <LinearLayout
+            android:id="@+id/enable_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:layout_marginBottom="20dp"
+            android:background="#262642">
+
+            <Button
+                android:id="@+id/btn_enable_ime"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginBottom="8dp"
+                android:text="① Enable CodeKeys in System Settings  →"
+                android:textAllCaps="false"
+                android:textSize="13sp"
+                android:textColor="#00E5FF"
+                android:background="#2D2D55" />
+
+            <Button
+                android:id="@+id/btn_pick_ime"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="② Switch to CodeKeys (open IME picker)  →"
+                android:textAllCaps="false"
+                android:textSize="13sp"
+                android:textColor="#E8E8FF"
+                android:background="#252545" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingTop="10dp"
+                android:text="Tap ① to enable, then ② to activate CodeKeys as your keyboard."
+                android:textSize="11sp"
+                android:textColor="#9494B5" />
+        </LinearLayout>
+
+        <!-- ══════════════════════════════════════════════════════
+             PREFERENCES
+        ══════════════════════════════════════════════════════ -->
+        <TextView
+            android:id="@+id/header_prefs"
+            style="@style/SettingsHeader"
+            android:text="PREFERENCES" />
+
+        <LinearLayout
+            android:id="@+id/preferences_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <!-- ══════════════════════════════════════════════════════
+             THEMES
+        ══════════════════════════════════════════════════════ -->
+        <TextView
+            android:id="@+id/header_themes"
+            style="@style/SettingsHeader"
+            android:text="THEMES" />
+
+        <LinearLayout
+            android:id="@+id/themes_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <!-- ══════════════════════════════════════════════════════
+             DEFAULT LANGUAGE MODE
+        ══════════════════════════════════════════════════════ -->
+        <TextView
+            android:id="@+id/header_lang"
+            style="@style/SettingsHeader"
+            android:text="DEFAULT LANGUAGE MODE" />
+
+        <LinearLayout
+            android:id="@+id/lang_buttons_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="4dp" />
+
+        <!-- ══════════════════════════════════════════════════════
+             CUSTOM LANGUAGE PRESETS
+        ══════════════════════════════════════════════════════ -->
+        <TextView
+            android:id="@+id/header_custom_langs"
+            style="@style/SettingsHeader"
+            android:text="CUSTOM LANGUAGE PRESETS" />
+
+        <LinearLayout
+            android:id="@+id/custom_lang_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="14dp"
+            android:background="#202036">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Add your own language presets. They appear alongside the built-in ones in the keyboard's language popup."
+                android:textSize="11sp"
+                android:textColor="#9494B5"
+                android:paddingBottom="10dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <EditText
+                    android:id="@+id/edit_new_lang"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:hint="e.g. RUST"
+                    android:textColor="#E8E8FF"
+                    android:textColorHint="#6A6A85"
+                    android:background="#181826"
+                    android:padding="10dp"
+                    android:textSize="13sp"
+                    android:maxLines="1"
+                    android:imeOptions="actionDone"
+                    android:inputType="textCapCharacters" />
+
+                <Button
+                    android:id="@+id/btn_add_lang"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="Add"
+                    android:textAllCaps="false"
+                    android:textColor="#00E5FF"
+                    android:background="#2D2D55" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/custom_lang_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="10dp" />
+        </LinearLayout>
+
+        <!-- ══════════════════════════════════════════════════════
+             SNIPPET REFERENCE
+        ══════════════════════════════════════════════════════ -->
+        <TextView
+            android:id="@+id/header_snips"
+            style="@style/SettingsHeader"
+            android:text="SNIPPET REFERENCE" />
+
+        <LinearLayout
+            android:id="@+id/snippet_ref_box"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="14dp"
+            android:background="#1F1F33" />
+
+        <!-- ══════════════════════════════════════════════════════
+             RESET
+        ══════════════════════════════════════════════════════ -->
+        <TextView
+            android:id="@+id/header_reset"
+            style="@style/SettingsHeader"
+            android:text="RESET" />
+
+        <Button
+            android:id="@+id/btn_reset"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="Reset All Settings to Default"
+            android:textAllCaps="false"
+            android:textSize="14sp"
+            android:textColor="#FF6666"
+            android:background="#22FF0000" />
+
+        <!-- ══════════════════════════════════════════════════════
+             Footer
+        ══════════════════════════════════════════════════════ -->
+        <TextView
+            android:id="@+id/footer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:gravity="center"
+            android:text="CodeKeys v1.0  •  Built for developers"
+            android:textSize="11sp"
+            android:textColor="#9494B5" />
+    </LinearLayout>
+</ScrollView>
