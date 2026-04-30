@@ -449,11 +449,10 @@ public class CodeKeysIME extends InputMethodService {
             view.animate().alpha(1f).setDuration(140).start();
         }
 
-        // Reflect button "active" state.
-        if (btnSymbolsPanel != null)
-            btnSymbolsPanel.setBackgroundColor(panelMode == PanelMode.SYMBOLS ? getAccentColor() : getKeyBgColor());
-        if (btnEmoji != null)
-            btnEmoji.setBackgroundColor(panelMode == PanelMode.EMOJI ? getAccentColor() : getKeyBgColor());
+        // Reflect button "active" state — re-styling all static keys keeps
+        // the rounded-radius / stroke look consistent while the active panel
+        // changes its highlight.
+        styleStaticKeys();
         // The space bar's label changes role with the panel: in clipboard mode
         // it acts as an "back to keyboard" button instead of inserting space.
         if (btnSpace != null) {
@@ -904,21 +903,24 @@ public class CodeKeysIME extends InputMethodService {
         if (btnCaps == null) return;
         int accent = getAccentColor();
         int keyBg = getKeyBgColor();
+        int radius = dp(getKeyRadiusDp());
+        int strokeW = dp(getKeyStrokeWidthDp());
+        int strokeC = getKeyStrokeColor();
         switch (capsState) {
             case CAPS_OFF:
                 btnCaps.setText("⇧");
                 btnCaps.setTextColor(getKeyTextColor());
-                btnCaps.setBackground(ui.roundedFill(keyBg, dp(10)));
+                btnCaps.setBackground(ui.roundedFill(keyBg, radius, strokeW, strokeC));
                 break;
             case CAPS_SINGLE:
                 btnCaps.setText("⇧");
                 btnCaps.setTextColor(accent);
-                btnCaps.setBackground(ui.roundedFill(blend(keyBg, accent, 0.35f), dp(10)));
+                btnCaps.setBackground(ui.roundedFill(blend(keyBg, accent, 0.35f), radius, strokeW, strokeC));
                 break;
             case CAPS_LOCKED:
                 btnCaps.setText("⇪");
                 btnCaps.setTextColor(0xFF000000);
-                btnCaps.setBackground(ui.roundedFill(accent, dp(10)));
+                btnCaps.setBackground(ui.roundedFill(accent, radius, strokeW, strokeC));
                 break;
         }
     }
@@ -1361,7 +1363,141 @@ public class CodeKeysIME extends InputMethodService {
         boolean dark   = prefs.getBoolean("dark", true);
         int bgColor  = prefs.getInt("bg_color", dark ? 0xFF1A1A2E : 0xFFF0F0F0);
         if (amoled) bgColor = 0xFF000000;
-        keyboardView.setBackgroundColor(bgColor);
+
+        // Apply keyboard background — solid color, gradient, or custom image.
+        // AMOLED forces solid black regardless of mode so OLED batteries win.
+        applyKeyboardBackground(bgColor, amoled);
+
+        // Restyle every key surface (bottom row + caps/backspace + suggestion
+        // strip background) so that user-configurable radius / stroke / text
+        // size flow through every visible button consistently.
+        styleStaticKeys();
+    }
+
+    /**
+     * Paints the keyboard root with whatever background the user has chosen.
+     * Modes (stored under {@code kb_bg_mode}):
+     * <ul>
+     *   <li>{@code "solid"} (default) — single bg color from theme.</li>
+     *   <li>{@code "gradient"} — vertical linear gradient between
+     *       {@code kb_bg_gradient_start} and {@code kb_bg_gradient_end}.</li>
+     *   <li>{@code "image"} — user-picked image at {@code kb_bg_image_uri}.
+     *       Falls back to solid if the URI can't be loaded.</li>
+     * </ul>
+     * AMOLED short-circuits to pure black.
+     */
+    private void applyKeyboardBackground(int solidColor, boolean amoled) {
+        if (keyboardView == null) return;
+        if (amoled) {
+            keyboardView.setBackgroundColor(0xFF000000);
+            return;
+        }
+        String mode = prefs.getString("kb_bg_mode", "solid");
+        if ("gradient".equals(mode)) {
+            int start = prefs.getInt("kb_bg_gradient_start", solidColor);
+            int end   = prefs.getInt("kb_bg_gradient_end",
+                    blend(solidColor, 0xFF000000, 0.30f));
+            GradientDrawable g = new GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[]{start, end});
+            keyboardView.setBackground(g);
+            return;
+        }
+        if ("image".equals(mode)) {
+            String uriStr = prefs.getString("kb_bg_image_uri", "");
+            if (!TextUtils.isEmpty(uriStr)) {
+                try {
+                    android.net.Uri uri = android.net.Uri.parse(uriStr);
+                    java.io.InputStream is = getContentResolver().openInputStream(uri);
+                    if (is != null) {
+                        android.graphics.Bitmap bmp =
+                                android.graphics.BitmapFactory.decodeStream(is);
+                        is.close();
+                        if (bmp != null) {
+                            android.graphics.drawable.BitmapDrawable bd =
+                                    new android.graphics.drawable.BitmapDrawable(
+                                            getResources(), bmp);
+                            // Scale to fill the keyboard like a "cover" crop.
+                            bd.setGravity(Gravity.FILL);
+                            keyboardView.setBackground(bd);
+                            return;
+                        }
+                    }
+                } catch (Exception ignored) {
+                    // Fall through to solid bg.
+                }
+            }
+        }
+        keyboardView.setBackgroundColor(solidColor);
+    }
+
+    /**
+     * Programmatically styles the always-visible buttons (suggestion strip
+     * background, bottom action row keys) so that they share the user-chosen
+     * corner radius, stroke, and text size with the dynamically-built keys.
+     * Called after every theme apply.
+     */
+    private void styleStaticKeys() {
+        int keyBg   = getKeyBgColor();
+        int textCol = getKeyTextColor();
+        int accent  = getAccentColor();
+        int radius  = dp(getKeyRadiusDp());
+        int strokeW = dp(getKeyStrokeWidthDp());
+        int strokeC = getKeyStrokeColor();
+
+        // Bottom action row: all flat-color buttons get the unified rounded
+        // background so radius / stroke matches the QWERTY keys.
+        styleActionButton(btnSettings,     keyBg, accent,  radius, strokeW, strokeC);
+        styleActionButton(btnSymbolsPanel, panelMode == PanelMode.SYMBOLS ? accent : keyBg,
+                panelMode == PanelMode.SYMBOLS ? 0xFF000000 : textCol,
+                radius, strokeW, strokeC);
+        styleActionButton(btnEmoji,
+                panelMode == PanelMode.EMOJI ? accent : keyBg,
+                panelMode == PanelMode.EMOJI ? 0xFF000000 : textCol,
+                radius, strokeW, strokeC);
+        styleActionButton(btnUndo,         keyBg, textCol, radius, strokeW, strokeC);
+        styleActionButton(btnSpace,        keyBg, textCol, radius, strokeW, strokeC);
+        styleActionButton(btnRedo,         keyBg, textCol, radius, strokeW, strokeC);
+        styleActionButton(btnEnter,        keyBg, accent,  radius, strokeW, strokeC);
+        styleArrowButton(btnArrowLeft,  keyBg, radius, strokeW, strokeC);
+        styleArrowButton(btnArrowRight, keyBg, radius, strokeW, strokeC);
+        styleArrowButton(btnArrowUp,    keyBg, radius, strokeW, strokeC);
+        styleArrowButton(btnArrowDown,  keyBg, radius, strokeW, strokeC);
+
+        // Caps + backspace inside the keyboard panel (only present when the
+        // keyboard panel is bound).
+        styleActionButton(btnBackspace, keyBg, textCol, radius, strokeW, strokeC);
+        // Caps gets its own state-driven look in refreshCapsButtonStyle(); we
+        // only refresh the corner radius / stroke here.
+        if (btnCaps != null) {
+            // Re-call refreshCapsButtonStyle so its rounded fill picks up the
+            // current radius. The fill color matches the caps state.
+            refreshCapsButtonStyle();
+        }
+
+        // Suggestion strip: subtle rounded surface so it visually pairs with
+        // the keys instead of looking like a flat bar.
+        if (rowSuggestions != null) {
+            View parent = (View) rowSuggestions.getParent();
+            if (parent != null) {
+                parent.setBackground(ui.roundedFill(
+                        blend(keyBg, 0xFF000000, 0.18f), radius, strokeW, strokeC));
+            }
+        }
+    }
+
+    /** Applies the unified rounded fill + text styling to a Button. */
+    private void styleActionButton(Button b, int bg, int textCol,
+                                   int radius, int strokeW, int strokeC) {
+        if (b == null) return;
+        b.setBackground(ui.roundedFill(bg, radius, strokeW, strokeC));
+        b.setTextColor(textCol);
+    }
+
+    private void styleArrowButton(ImageButton b, int bg,
+                                  int radius, int strokeW, int strokeC) {
+        if (b == null) return;
+        b.setBackground(ui.roundedFill(bg, radius, strokeW, strokeC));
     }
 
     /** Returns the user-configured key-height multiplier, clamped to a sensible band. */
@@ -1495,6 +1631,10 @@ public class CodeKeysIME extends InputMethodService {
 
     // ─── Color / theme accessors used by every module ────────────────────────
     int getKeyBgColor() {
+        // AMOLED override — every key renders pure black so the keyboard
+        // visually merges with the (also-black) background and only the labels
+        // and (transparent) strokes are visible. This is the OLED-saving look.
+        if (prefs.getBoolean("amoled", false)) return 0xFF000000;
         boolean dark = prefs.getBoolean("dark", true);
         return prefs.getInt("key_color", dark ? 0xFF252545 : 0xFFFFFFFF);
     }
@@ -1504,6 +1644,38 @@ public class CodeKeysIME extends InputMethodService {
     }
     int getAccentColor() {
         return prefs.getInt("accent_color", 0xFF00E5FF);
+    }
+
+    /** User-configurable corner radius for every keyboard surface (dp). */
+    int getKeyRadiusDp() {
+        int v = prefs.getInt("key_radius_dp", 12);
+        if (v < 0) v = 0;
+        if (v > 40) v = 40;
+        return v;
+    }
+    /** User-configurable label text size for letter / symbol keys (sp). */
+    float getKeyTextSizeSp() {
+        int v = prefs.getInt("key_text_size_sp", 14);
+        if (v < 8) v = 8;
+        if (v > 28) v = 28;
+        return (float) v;
+    }
+    /** Stroke width applied to every key surface (dp). 0 = no border. */
+    int getKeyStrokeWidthDp() {
+        int v = prefs.getInt("key_stroke_width_dp", 0);
+        if (v < 0) v = 0;
+        if (v > 6) v = 6;
+        return v;
+    }
+    /**
+     * Stroke color applied to every key surface. AMOLED forces a fully
+     * transparent stroke regardless of user setting — see the user's request:
+     * "amoled selected, whole keyboard show as pure black keys with stroke
+     * transparent".
+     */
+    int getKeyStrokeColor() {
+        if (prefs.getBoolean("amoled", false)) return 0x00000000;
+        return prefs.getInt("key_stroke_color", 0x00000000);
     }
 
     // ─── Haptic / sound ──────────────────────────────────────────────────────
