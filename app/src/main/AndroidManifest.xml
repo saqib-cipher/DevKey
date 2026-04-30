@@ -10,16 +10,16 @@
 -->
 <manifest
     xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.codekeys.ime">
+    >
 
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
+
         android:label="CodeKeys"
-        android:theme="@style/AppTheme">
+        >
 
         <!-- ─── Launcher Activity (Settings) ─── -->
         <activity

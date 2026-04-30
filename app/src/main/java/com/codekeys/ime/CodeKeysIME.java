@@ -18,16 +18,29 @@ import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.PopupWindow;
+import android.widget.PopupMenu;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.Gravity;
+import android.view.MotionEvent;
+import android.content.Intent;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import org.json.JSONObject;
+import org.json.JSONArray;
+import org.json.JSONException;
+import java.util.Iterator;
 
 public class CodeKeysIME extends InputMethodService {
 
     // ─── State ────────────────────────────────────────────────────────────────
-    private boolean isCaps = false;
+    private int shiftState = 0; // 0=lower, 1=shift, 2=caps lock
+    private long lastShiftTime = 0;
     private boolean isSymbolMode = false;
+    private boolean isEmojiMode = false;
     private String currentLang = "GENERAL"; // GENERAL | C | JAVA | PYTHON | JS
     private SharedPreferences prefs;
     private Vibrator vibrator;
@@ -38,7 +51,9 @@ public class CodeKeysIME extends InputMethodService {
     // Views
     private View keyboardView;
     private LinearLayout rowLetters1, rowLetters2, rowLetters3;
-    private LinearLayout rowSymbols, rowSnippets, rowNav;
+    private PopupWindow keyPreviewPopup;
+    private TextView keyPreviewText;
+    private LinearLayout rowSymbols, rowSnippets, rowNav, rowSuggestions;
     private TextView langLabel;
 
     // ─── Language Snippets ────────────────────────────────────────────────────
@@ -123,6 +138,26 @@ public class CodeKeysIME extends InputMethodService {
         prefs = getSharedPreferences("codekeys_prefs", MODE_PRIVATE);
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
         currentLang = prefs.getString("lang", "GENERAL");
+        loadCustomLanguages();
+    }
+
+    private void loadCustomLanguages() {
+        String customLangsJson = prefs.getString("custom_langs", "{}");
+        try {
+            JSONObject jsonObj = new JSONObject(customLangsJson);
+            Iterator<String> keys = jsonObj.keys();
+            while(keys.hasNext()) {
+                String key = keys.next();
+                JSONArray jsonArray = jsonObj.getJSONArray(key);
+                String[] symbols = new String[jsonArray.length()];
+                for (int i = 0; i < jsonArray.length(); i++) {
+                    symbols[i] = jsonArray.getString(i);
+                }
+                LANG_SYMBOLS.put(key, symbols);
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -137,6 +172,117 @@ public class CodeKeysIME extends InputMethodService {
     @Override
     public void onStartInputView(EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
+        loadCustomLanguages();
+        updateEnterButton(info);
+        updateSuggestions();
+    }
+
+    @Override
+    public void onUpdateSelection(int oldSelStart, int oldSelEnd, int newSelStart, int newSelEnd, int candidatesStart, int candidatesEnd) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd);
+        updateSuggestions();
+    }
+
+    private void updateSuggestions() {
+        if (rowSuggestions == null) return;
+        rowSuggestions.removeAllViews();
+
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+
+        CharSequence textBefore = ic.getTextBeforeCursor(50, 0);
+        if (textBefore == null || textBefore.length() == 0) return;
+
+        String text = textBefore.toString();
+        int lastSpace = text.lastIndexOf(' ');
+        int lastNewline = text.lastIndexOf('\n');
+        int startWord = Math.max(lastSpace, lastNewline) + 1;
+
+        String currentWord = text.substring(startWord).trim();
+        if (currentWord.isEmpty()) return;
+
+        // Mock suggestions based on language
+        String[] mockDict;
+        if ("JAVA".equals(currentLang)) {
+            mockDict = new String[]{"public", "private", "protected", "class", "void", "static", "final", "return", "String", "int", "boolean", "new", "this"};
+        } else if ("PYTHON".equals(currentLang)) {
+            mockDict = new String[]{"def", "class", "import", "from", "return", "if", "elif", "else", "while", "for", "in", "True", "False", "None"};
+        } else if ("JS".equals(currentLang)) {
+            mockDict = new String[]{"function", "const", "let", "var", "return", "if", "else", "=>", "Promise", "async", "await", "console.log"};
+        } else if ("C".equals(currentLang)) {
+            mockDict = new String[]{"int", "void", "char", "float", "double", "if", "else", "while", "for", "return", "include", "printf", "scanf"};
+        } else {
+            mockDict = new String[]{"the", "and", "is", "in", "to", "of", "it", "that", "you", "for", "on", "with", "as", "at", "be"};
+        }
+
+        int count = 0;
+        for (String word : mockDict) {
+            if (word.toLowerCase().startsWith(currentWord.toLowerCase()) && !word.equalsIgnoreCase(currentWord)) {
+                Button btn = new Button(this);
+                btn.setText(word);
+                btn.setTextSize(12f);
+                btn.setAllCaps(false);
+                btn.setTextColor(getAccentColor());
+                btn.setBackgroundColor(getKeyBgColor());
+                btn.setPadding(dpToPx(8), 0, dpToPx(8), 0);
+
+                final String suggestion = word;
+                btn.setOnClickListener(v -> {
+                    ic.deleteSurroundingText(currentWord.length(), 0);
+                    ic.commitText(suggestion + " ", 1);
+                    updateSuggestions();
+                });
+
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT);
+                lp.setMargins(dpToPx(2), dpToPx(2), dpToPx(2), dpToPx(2));
+                btn.setLayoutParams(lp);
+
+                rowSuggestions.addView(btn);
+                count++;
+                if (count >= 5) break; // Max 5 suggestions
+            }
+        }
+    }
+
+    private void updateEnterButton(EditorInfo info) {
+        if (keyboardView == null) return;
+        Button btnEnter = keyboardView.findViewById(R.id.btn_enter);
+        if (btnEnter == null) return;
+
+        int imeAction = info.imeOptions & EditorInfo.IME_MASK_ACTION;
+        String label = "↵";
+
+        switch (imeAction) {
+            case EditorInfo.IME_ACTION_GO:
+                label = "GO";
+                break;
+            case EditorInfo.IME_ACTION_NEXT:
+                label = "NEXT";
+                break;
+            case EditorInfo.IME_ACTION_SEARCH:
+                label = "🔍";
+                break;
+            case EditorInfo.IME_ACTION_SEND:
+                label = "SEND";
+                break;
+            case EditorInfo.IME_ACTION_DONE:
+                label = "DONE";
+                break;
+        }
+
+        btnEnter.setText(label);
+        btnEnter.setOnClickListener(v -> {
+            haptic(v);
+            InputConnection ic = getCurrentInputConnection();
+            if (ic == null) return;
+
+            if (imeAction != EditorInfo.IME_ACTION_NONE && imeAction != EditorInfo.IME_ACTION_UNSPECIFIED) {
+                ic.performEditorAction(imeAction);
+            } else {
+                ic.commitText("\n", 1);
+            }
+        });
     }
 
     // ─── View Init ────────────────────────────────────────────────────────────
@@ -148,13 +294,42 @@ public class CodeKeysIME extends InputMethodService {
         rowSnippets = keyboardView.findViewById(R.id.row_snippets);
         rowNav      = keyboardView.findViewById(R.id.row_nav);
         langLabel   = keyboardView.findViewById(R.id.lang_label);
+        rowSuggestions = keyboardView.findViewById(R.id.row_suggestions);
 
         // Nav buttons
         setupNavButtons();
 
         // Lang switcher
         langLabel.setText(currentLang);
-        langLabel.setOnClickListener(v -> cycleLang());
+        langLabel.setOnClickListener(v -> showLanguagePopup());
+
+        // Key Preview Popup
+        keyPreviewText = new TextView(this);
+        keyPreviewText.setBackgroundResource(android.R.drawable.dialog_holo_light_frame);
+        keyPreviewText.setTextColor(0xFF000000);
+        keyPreviewText.setTextSize(32f);
+        keyPreviewText.setGravity(Gravity.CENTER);
+        keyPreviewText.setPadding(0, 0, 0, dpToPx(8));
+
+        keyPreviewPopup = new PopupWindow(keyPreviewText, dpToPx(50), dpToPx(60));
+        keyPreviewPopup.setTouchable(false);
+    }
+
+    private void showPreview(View key, String label) {
+        if (keyPreviewPopup != null && keyPreviewText != null) {
+            keyPreviewText.setText(label);
+            int[] loc = new int[2];
+            key.getLocationInWindow(loc);
+            int x = loc[0] + key.getWidth() / 2 - keyPreviewPopup.getWidth() / 2;
+            int y = loc[1] - keyPreviewPopup.getHeight();
+            keyPreviewPopup.showAtLocation(keyboardView, Gravity.NO_GRAVITY, x, y);
+        }
+    }
+
+    private void hidePreview() {
+        if (keyPreviewPopup != null && keyPreviewPopup.isShowing()) {
+            keyPreviewPopup.dismiss();
+        }
     }
 
     // ─── Build Dynamic Rows ───────────────────────────────────────────────────
@@ -179,16 +354,40 @@ public class CodeKeysIME extends InputMethodService {
     }
 
     private void addLetterKey(LinearLayout parent, final String letter) {
-        Button btn = makeKey(isCaps ? letter.toUpperCase() : letter);
+        boolean isUpper = shiftState > 0;
+        Button btn = makeKey(isUpper ? letter.toUpperCase() : letter);
+        btn.setOnTouchListener((v, event) -> {
+            String ch = isUpper ? letter.toUpperCase() : letter;
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    showPreview(v, ch);
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    hidePreview();
+                    break;
+            }
+            return false;
+        });
         btn.setOnClickListener(v -> {
             haptic(v);
-            String ch = isCaps ? letter.toUpperCase() : letter;
+            String ch = isUpper ? letter.toUpperCase() : letter;
             commitText(ch);
+            if (shiftState == 1) {
+                shiftState = 0;
+                buildQwertyRows();
+                updateCapsUI();
+            }
         });
         btn.setOnLongClickListener(v -> {
             haptic(v);
-            String ch = isCaps ? letter.toLowerCase() : letter.toUpperCase();
+            String ch = isUpper ? letter.toLowerCase() : letter.toUpperCase();
             commitText(ch);
+            if (shiftState == 1) {
+                shiftState = 0;
+                buildQwertyRows();
+                updateCapsUI();
+            }
             return true;
         });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dpToPx(48), 1f);
@@ -198,12 +397,24 @@ public class CodeKeysIME extends InputMethodService {
     }
 
     private void buildSymbolRow() {
-        String[] symbols = LANG_SYMBOLS.getOrDefault(currentLang, LANG_SYMBOLS.get("GENERAL"));
+        String[] symbols = LANG_SYMBOLS.containsKey(currentLang) ? LANG_SYMBOLS.get(currentLang) : LANG_SYMBOLS.get("GENERAL");
         rowSymbols.removeAllViews();
         if (symbols == null) return;
         for (final String sym : symbols) {
             Button btn = makeKey(sym);
             btn.setTextSize(12f);
+            btn.setOnTouchListener((v, event) -> {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        showPreview(v, sym);
+                        break;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        hidePreview();
+                        break;
+                }
+                return false;
+            });
             btn.setOnClickListener(v -> {
                 haptic(v);
                 insertSymbolWithAutoClose(sym);
@@ -222,7 +433,7 @@ public class CodeKeysIME extends InputMethodService {
     }
 
     private void buildSnippetRow() {
-        String[][] snippets = LANG_SNIPPETS.getOrDefault(currentLang, LANG_SNIPPETS.get("GENERAL"));
+        String[][] snippets = LANG_SNIPPETS.containsKey(currentLang) ? LANG_SNIPPETS.get(currentLang) : LANG_SNIPPETS.get("GENERAL");
         rowSnippets.removeAllViews();
         if (snippets == null) return;
         for (final String[] snippet : snippets) {
@@ -259,12 +470,35 @@ public class CodeKeysIME extends InputMethodService {
         if (btnSpace != null) btnSpace.setOnClickListener(v -> { haptic(v); commitText(" "); });
 
         // Enter
-        Button btnEnter = keyboardView.findViewById(R.id.btn_enter);
-        if (btnEnter != null) btnEnter.setOnClickListener(v -> { haptic(v); commitText("\n"); });
+        // Handled in updateEnterButton
 
-        // Tab
-        Button btnTab = keyboardView.findViewById(R.id.btn_tab);
-        if (btnTab != null) btnTab.setOnClickListener(v -> { haptic(v); commitText("\t"); });
+        // Symbols
+        Button btnSymbols = keyboardView.findViewById(R.id.btn_symbols);
+        if (btnSymbols != null) {
+            btnSymbols.setOnClickListener(v -> {
+                haptic(v);
+                isSymbolMode = !isSymbolMode;
+                if (isSymbolMode) isEmojiMode = false;
+                btnSymbols.setText(isSymbolMode ? "ABC" : "?123");
+                Button btnEmoji = keyboardView.findViewById(R.id.btn_emoji);
+                if (btnEmoji != null) btnEmoji.setText("☺");
+                buildQwertyRows();
+            });
+        }
+
+        // Emoji
+        Button btnEmoji = keyboardView.findViewById(R.id.btn_emoji);
+        if (btnEmoji != null) {
+            btnEmoji.setOnClickListener(v -> {
+                haptic(v);
+                isEmojiMode = !isEmojiMode;
+                if (isEmojiMode) isSymbolMode = false;
+                btnEmoji.setText(isEmojiMode ? "ABC" : "☺");
+                Button btnSymbolsInner = keyboardView.findViewById(R.id.btn_symbols);
+                if (btnSymbolsInner != null) btnSymbolsInner.setText("?123");
+                buildQwertyRows();
+            });
+        }
 
         // Arrows
         ImageButton btnLeft  = keyboardView.findViewById(R.id.btn_arrow_left);
@@ -288,6 +522,18 @@ public class CodeKeysIME extends InputMethodService {
         if (rowNums != null) {
             for (final String n : nums) {
                 Button btn = makeKey(n);
+                btn.setOnTouchListener((v, event) -> {
+                    switch (event.getAction()) {
+                        case MotionEvent.ACTION_DOWN:
+                            showPreview(v, n);
+                            break;
+                        case MotionEvent.ACTION_UP:
+                        case MotionEvent.ACTION_CANCEL:
+                            hidePreview();
+                            break;
+                    }
+                    return false;
+                });
                 btn.setOnClickListener(v -> { haptic(v); commitText(n); });
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dpToPx(42), 1f);
                 lp.setMargins(2,2,2,2);
@@ -360,23 +606,77 @@ public class CodeKeysIME extends InputMethodService {
 
     // ─── Caps & Lang ─────────────────────────────────────────────────────────
     private void toggleCaps() {
-        isCaps = !isCaps;
+        InputConnection ic = getCurrentInputConnection();
+        if (ic != null) {
+            CharSequence selectedText = ic.getSelectedText(0);
+            if (selectedText != null && selectedText.length() > 0) {
+                String selected = selectedText.toString();
+                boolean isUpper = selected.equals(selected.toUpperCase());
+                if (isUpper) {
+                    ic.commitText(selected.toLowerCase(), 1);
+                } else {
+                    ic.commitText(selected.toUpperCase(), 1);
+                }
+                return;
+            }
+        }
+
+        long now = System.currentTimeMillis();
+        if (shiftState == 0) {
+            shiftState = 1;
+        } else if (shiftState == 1) {
+            if (now - lastShiftTime < 500) {
+                shiftState = 2; // Caps lock
+            } else {
+                shiftState = 0;
+            }
+        } else if (shiftState == 2) {
+            shiftState = 0;
+        }
+        lastShiftTime = now;
         buildQwertyRows();
+        updateCapsUI();
+    }
+
+    private void updateCapsUI() {
         Button btnCaps = keyboardView.findViewById(R.id.btn_caps);
         if (btnCaps != null) {
-            int bg = isCaps ? getAccentColor() : getKeyBgColor();
-            btnCaps.setBackgroundColor(bg);
+            if (shiftState == 0) {
+                btnCaps.setText("⇧");
+                btnCaps.setBackgroundColor(getKeyBgColor());
+            } else if (shiftState == 1) {
+                btnCaps.setText("⇧");
+                btnCaps.setBackgroundColor(getAccentColor());
+            } else if (shiftState == 2) {
+                btnCaps.setText("⇪");
+                btnCaps.setBackgroundColor(getAccentColor());
+            }
         }
     }
 
-    private void cycleLang() {
-        String[] langs = {"GENERAL","C","JAVA","PYTHON","JS"};
-        int idx = Arrays.asList(langs).indexOf(currentLang);
-        currentLang = langs[(idx + 1) % langs.length];
-        prefs.edit().putString("lang", currentLang).apply();
-        langLabel.setText(currentLang);
-        buildSymbolRow();
-        buildSnippetRow();
+    private void showLanguagePopup() {
+        PopupMenu popup = new PopupMenu(this, langLabel);
+        for (String lang : LANG_SYMBOLS.keySet()) {
+            popup.getMenu().add(lang);
+        }
+        popup.getMenu().add("Settings");
+
+        popup.setOnMenuItemClickListener(item -> {
+            String title = item.getTitle().toString();
+            if (title.equals("Settings")) {
+                Intent intent = new Intent(this, SettingsActivity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+            } else {
+                currentLang = title;
+                prefs.edit().putString("lang", currentLang).apply();
+                langLabel.setText(currentLang);
+                buildSymbolRow();
+                buildSnippetRow();
+            }
+            return true;
+        });
+        popup.show();
     }
 
     // ─── Clipboard ────────────────────────────────────────────────────────────

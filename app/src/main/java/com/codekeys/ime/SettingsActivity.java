@@ -14,7 +14,13 @@ import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.EditText;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import androidx.appcompat.app.AppCompatActivity;
+import org.json.JSONObject;
+import org.json.JSONException;
+import java.util.Iterator;
 
 public class SettingsActivity extends AppCompatActivity {
 
@@ -45,98 +51,73 @@ public class SettingsActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("codekeys_prefs", MODE_PRIVATE);
-        setContentView(buildUI());
-    }
+        setContentView(R.layout.settings_activity);
 
-    private ScrollView buildUI() {
         int bg      = prefs.getInt("bg_color",     0xFF1A1A2E);
         int accent  = prefs.getInt("accent_color", 0xFF00E5FF);
         int textCol = prefs.getInt("text_color",   0xFFE8E8FF);
 
-        ScrollView sv = new ScrollView(this);
+        ScrollView sv = findViewById(R.id.settings_scroll_view);
         sv.setBackgroundColor(bg);
-        sv.setFillViewport(true);
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout root = findViewById(R.id.settings_root);
         root.setBackgroundColor(bg);
-        root.setPadding(dp(20), dp(20), dp(20), dp(40));
 
-        // ── Title bar ──────────────────────────────────────────────────────
-        LinearLayout titleBar = new LinearLayout(this);
-        titleBar.setOrientation(LinearLayout.HORIZONTAL);
-        titleBar.setGravity(Gravity.CENTER_VERTICAL);
-        titleBar.setPadding(0, 0, 0, dp(24));
-
-        View swatch = new View(this);
+        View swatch = findViewById(R.id.title_swatch);
         swatch.setBackgroundColor(accent);
-        LinearLayout.LayoutParams swatchLp = new LinearLayout.LayoutParams(dp(6), dp(36));
-        swatchLp.setMargins(0, 0, dp(14), 0);
-        swatch.setLayoutParams(swatchLp);
-        titleBar.addView(swatch);
 
-        LinearLayout titleText = new LinearLayout(this);
-        titleText.setOrientation(LinearLayout.VERTICAL);
-
-        TextView title = new TextView(this);
-        title.setText("CodeKeys");
-        title.setTextSize(26f);
+        TextView title = findViewById(R.id.title_text);
         title.setTextColor(textCol);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        titleText.addView(title);
 
-        TextView subtitle = new TextView(this);
-        subtitle.setText("Coding Keyboard Settings");
-        subtitle.setTextSize(12f);
+        TextView subtitle = findViewById(R.id.subtitle_text);
         subtitle.setTextColor(dim(textCol));
-        titleText.addView(subtitle);
 
-        titleBar.addView(titleText);
-        root.addView(titleBar);
+        LinearLayout dynamicContainer = findViewById(R.id.dynamic_content_container);
 
         // ── Enable IME card ────────────────────────────────────────────────
-        root.addView(buildEnableCard(accent, textCol, bg));
+        dynamicContainer.addView(buildEnableCard(accent, textCol, bg));
 
         // ── Toggles ────────────────────────────────────────────────────────
-        addHeader(root, "PREFERENCES", textCol);
+        addHeader(dynamicContainer, "PREFERENCES", textCol);
 
-        root.addView(buildToggle("Haptic Feedback",
+        dynamicContainer.addView(buildToggle("Haptic Feedback",
             "Vibrate on each key press",
             "haptic", true, textCol, bg, accent));
 
-        root.addView(buildToggle("Dark Mode",
+        dynamicContainer.addView(buildToggle("Dark Mode",
             "Use dark keyboard background",
             "dark", true, textCol, bg, accent));
 
-        root.addView(buildToggle("AMOLED Mode",
+        dynamicContainer.addView(buildToggle("AMOLED Mode",
             "Pure black background (saves battery on OLED screens)",
             "amoled", false, textCol, bg, accent));
 
-        root.addView(buildToggle("Auto-close Brackets",
+        dynamicContainer.addView(buildToggle("Auto-close Brackets",
             "Type ( → inserts ()  |  Type { → inserts {}  |  Type [ → inserts []",
             "auto_close", true, textCol, bg, accent));
 
         // ── Themes ────────────────────────────────────────────────────────
-        addHeader(root, "THEMES", textCol);
-        root.addView(buildThemeGrid(bg, textCol, accent));
+        addHeader(dynamicContainer, "THEMES", textCol);
+        dynamicContainer.addView(buildThemeGrid(bg, textCol, accent));
 
         // ── Language ──────────────────────────────────────────────────────
-        addHeader(root, "DEFAULT LANGUAGE MODE", textCol);
-        root.addView(buildLangRow(textCol, bg, accent));
+        addHeader(dynamicContainer, "DEFAULT LANGUAGE MODE", textCol);
+        dynamicContainer.addView(buildLangRow(textCol, bg, accent));
+
+        // ── Custom Languages ──────────────────────────────────────────────
+        addHeader(dynamicContainer, "CUSTOM LANGUAGES", textCol);
+        dynamicContainer.addView(buildCustomLangBtn(textCol, bg, accent));
 
         // ── Snippets reference ────────────────────────────────────────────
-        addHeader(root, "SNIPPET REFERENCE", textCol);
-        root.addView(buildSnippetRef(textCol, bg, accent));
+        addHeader(dynamicContainer, "SNIPPET REFERENCE", textCol);
+        dynamicContainer.addView(buildSnippetRef(textCol, bg, accent));
 
         // ── Reset ─────────────────────────────────────────────────────────
-        addHeader(root, "RESET", textCol);
-        root.addView(buildResetBtn());
+        addHeader(dynamicContainer, "RESET", textCol);
+        dynamicContainer.addView(buildResetBtn());
 
         // ── Footer ────────────────────────────────────────────────────────
-        root.addView(buildFooter(textCol));
-
-        sv.addView(root);
-        return sv;
+        dynamicContainer.addView(buildFooter(textCol));
     }
 
     // ─── Enable IME Card ──────────────────────────────────────────────────────
@@ -389,6 +370,71 @@ public class SettingsActivity extends AppCompatActivity {
         box.addView(hint);
 
         return box;
+    }
+
+    // ─── Custom Language Button ────────────────────────────────────────────────
+    private View buildCustomLangBtn(int textCol, int bg, int accent) {
+        Button btn = new Button(this);
+        btn.setText("Add Custom Language");
+        btn.setAllCaps(false);
+        btn.setTextSize(14f);
+        btn.setTextColor(accent);
+        btn.setBackgroundColor(blend(bg, accent, 0.15f));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(50));
+        lp.setMargins(0, 0, 0, dp(4));
+        btn.setLayoutParams(lp);
+        btn.setOnClickListener(v -> showAddCustomLanguageDialog());
+        return btn;
+    }
+
+    private void showAddCustomLanguageDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Add Custom Language");
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(20), dp(20), dp(20), dp(20));
+
+        final EditText nameInput = new EditText(this);
+        nameInput.setHint("Language Name (e.g. HTML)");
+        layout.addView(nameInput);
+
+        final EditText symbolsInput = new EditText(this);
+        symbolsInput.setHint("Symbols (comma separated, e.g. <,>,/,=,\")");
+        layout.addView(symbolsInput);
+
+        builder.setView(layout);
+
+        builder.setPositiveButton("Add", (dialog, which) -> {
+            String name = nameInput.getText().toString().trim().toUpperCase();
+            String symbolsRaw = symbolsInput.getText().toString().trim();
+            if (!name.isEmpty() && !symbolsRaw.isEmpty()) {
+                String[] symbolsArr = symbolsRaw.split(",");
+                for (int i = 0; i < symbolsArr.length; i++) {
+                    symbolsArr[i] = symbolsArr[i].trim();
+                }
+
+                // Save to SharedPreferences as JSON
+                String customLangsJson = prefs.getString("custom_langs", "{}");
+                try {
+                    JSONObject jsonObj = new JSONObject(customLangsJson);
+                    org.json.JSONArray jsonArray = new org.json.JSONArray();
+                    for(String s : symbolsArr) {
+                        jsonArray.put(s);
+                    }
+                    jsonObj.put(name, jsonArray);
+                    prefs.edit().putString("custom_langs", jsonObj.toString()).apply();
+                    Toast.makeText(this, "Added " + name, Toast.LENGTH_SHORT).show();
+                    recreate();
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
+
+        builder.show();
     }
 
     // ─── Reset Button ─────────────────────────────────────────────────────────
