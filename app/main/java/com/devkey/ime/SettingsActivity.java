@@ -19,6 +19,9 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import android.app.AlertDialog;
+import android.text.InputType;
+
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.util.ArrayList;
@@ -455,11 +458,10 @@ public class SettingsActivity extends AppCompatActivity {
         List<String> custom = getCustomLanguages();
         if (custom.isEmpty()) {
             TextView hint = new TextView(this);
-            hint.setText("No custom presets yet.");
+            hint.setText("No custom presets yet. Add one above, then tap “Snippets…” to fill it in.");
             hint.setTextSize(11f);
             hint.setTextColor(dim(textCol));
             customLangList.addView(hint);
-            return;
         }
 
         for (final String name : custom) {
@@ -474,12 +476,27 @@ public class SettingsActivity extends AppCompatActivity {
             row.setLayoutParams(rlp);
 
             TextView nameView = new TextView(this);
-            nameView.setText(name);
+            int snippetCount = loadCustomSnippets(name).size();
+            nameView.setText(name + "  ·  " + snippetCount + " snippet" + (snippetCount == 1 ? "" : "s"));
             nameView.setTextSize(13f);
             nameView.setTextColor(textCol);
             nameView.setLayoutParams(new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             row.addView(nameView);
+
+            Button edit = new Button(this);
+            edit.setText("Snippets…");
+            edit.setAllCaps(false);
+            edit.setTextSize(11f);
+            edit.setTextColor(accent);
+            edit.setBackgroundColor(blend(bg, accent, 0.15f));
+            edit.setPadding(dp(10), 0, dp(10), 0);
+            LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            elp.setMarginEnd(dp(6));
+            edit.setLayoutParams(elp);
+            edit.setOnClickListener(v -> showSnippetEditor(name));
+            row.addView(edit);
 
             Button rm = new Button(this);
             rm.setText("Remove");
@@ -496,6 +513,261 @@ public class SettingsActivity extends AppCompatActivity {
 
             customLangList.addView(row);
         }
+
+        // Built-in languages also accept user-added snippets that overlay the
+        // built-in set. Show a compact list so the user can extend them too.
+        TextView header = new TextView(this);
+        header.setText("Built-in language snippets");
+        header.setTextSize(11f);
+        header.setTextColor(dim(textCol));
+        header.setTypeface(Typeface.DEFAULT_BOLD);
+        header.setPadding(0, dp(14), 0, dp(6));
+        customLangList.addView(header);
+
+        for (final String name : Arrays.asList("GENERAL", "C", "JAVA", "PYTHON", "JS")) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.03f));
+            row.setPadding(dp(12), dp(8), dp(8), dp(8));
+            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            rlp.setMargins(0, 0, 0, dp(2));
+            row.setLayoutParams(rlp);
+
+            TextView nv = new TextView(this);
+            int extra = loadCustomSnippets(name).size();
+            nv.setText(name + (extra > 0 ? "  ·  +" + extra + " custom" : ""));
+            nv.setTextSize(12f);
+            nv.setTextColor(textCol);
+            nv.setLayoutParams(new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            row.addView(nv);
+
+            Button edit = new Button(this);
+            edit.setText("Snippets…");
+            edit.setAllCaps(false);
+            edit.setTextSize(11f);
+            edit.setTextColor(accent);
+            edit.setBackgroundColor(blend(bg, accent, 0.10f));
+            edit.setPadding(dp(10), 0, dp(10), 0);
+            edit.setOnClickListener(v -> showSnippetEditor(name));
+            row.addView(edit);
+            customLangList.addView(row);
+        }
+    }
+
+    // ─── Snippet editor (per language) ────────────────────────────────────────
+    /**
+     * Pops up a sheet listing the user's custom snippets for {@code lang} with
+     * actions to add, edit, and delete entries. The list is persisted under
+     * {@code custom_snip_<LANG>} in the IME's SharedPreferences (see
+     * {@link com.codekeys.ime.CodeKeysIME#loadCustomSnippets}).
+     */
+    private void showSnippetEditor(final String lang) {
+        final List<String[]> snippets = new ArrayList<>(loadCustomSnippets(lang));
+        final ScrollView scroll = new ScrollView(this);
+        final LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(dp(16), dp(12), dp(16), dp(12));
+        scroll.addView(list);
+
+        final Runnable refresh = () -> renderSnippetList(list, lang, snippets);
+        refresh.run();
+
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setTitle("Snippets — " + lang)
+                .setView(scroll)
+                .setPositiveButton("Add snippet", null)
+                .setNegativeButton("Done", null)
+                .create();
+        dlg.show();
+
+        // Override the positive button so it doesn't auto-dismiss on Add.
+        dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v ->
+                showAddOrEditSnippet(lang, null, () -> {
+                    snippets.clear();
+                    snippets.addAll(loadCustomSnippets(lang));
+                    refresh.run();
+                    renderCustomLanguages();
+                }));
+    }
+
+    /**
+     * (Re)renders the current snippet list inside the editor sheet. Each row
+     * shows {@code trigger → expansion} (truncated for readability) plus
+     * Edit / Delete buttons.
+     */
+    private void renderSnippetList(LinearLayout container, final String lang,
+                                   final List<String[]> snippets) {
+        container.removeAllViews();
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        int accent  = prefs.getInt("accent_color", 0xFF00E5FF);
+
+        if (snippets.isEmpty()) {
+            TextView hint = new TextView(this);
+            hint.setText("No custom snippets yet. Tap “Add snippet”.");
+            hint.setTextSize(12f);
+            hint.setTextColor(dim(textCol));
+            hint.setPadding(0, 0, 0, dp(8));
+            container.addView(hint);
+            return;
+        }
+        for (int i = 0; i < snippets.size(); i++) {
+            final int idx = i;
+            final String[] s = snippets.get(i);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, dp(6), 0, dp(6));
+
+            TextView label = new TextView(this);
+            String preview = s[1].replace("\n", "↵");
+            if (preview.length() > 40) preview = preview.substring(0, 40) + "…";
+            label.setText(s[0] + "  →  " + preview);
+            label.setTextSize(13f);
+            label.setTextColor(textCol);
+            label.setTypeface(Typeface.MONOSPACE);
+            label.setLayoutParams(new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            row.addView(label);
+
+            Button edit = new Button(this);
+            edit.setText("Edit");
+            edit.setAllCaps(false);
+            edit.setTextSize(11f);
+            edit.setTextColor(accent);
+            edit.setBackgroundColor(0x00000000);
+            edit.setOnClickListener(v ->
+                    showAddOrEditSnippet(lang, s, () -> {
+                        snippets.clear();
+                        snippets.addAll(loadCustomSnippets(lang));
+                        renderSnippetList(container, lang, snippets);
+                        renderCustomLanguages();
+                    }));
+            row.addView(edit);
+
+            Button del = new Button(this);
+            del.setText("Delete");
+            del.setAllCaps(false);
+            del.setTextSize(11f);
+            del.setTextColor(0xFFFF6666);
+            del.setBackgroundColor(0x00000000);
+            del.setOnClickListener(v -> {
+                snippets.remove(idx);
+                saveCustomSnippets(lang, snippets);
+                renderSnippetList(container, lang, snippets);
+                renderCustomLanguages();
+            });
+            row.addView(del);
+
+            container.addView(row);
+        }
+    }
+
+    /**
+     * Shows an Add/Edit dialog for a single snippet. When {@code existing} is
+     * non-null the dialog pre-fills its fields and replaces that entry on save;
+     * otherwise the new snippet is appended. Calls {@code onSaved} after a
+     * successful persist so the parent list can refresh.
+     */
+    private void showAddOrEditSnippet(final String lang, final String[] existing,
+                                      final Runnable onSaved) {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(dp(16), dp(8), dp(16), dp(8));
+
+        final EditText trigger = new EditText(this);
+        trigger.setHint("Trigger (e.g. fn)");
+        trigger.setSingleLine(true);
+        trigger.setInputType(InputType.TYPE_CLASS_TEXT);
+        if (existing != null) trigger.setText(existing[0]);
+        container.addView(trigger);
+
+        final EditText expansion = new EditText(this);
+        expansion.setHint("Expansion (multi-line allowed)");
+        expansion.setMinLines(3);
+        expansion.setGravity(Gravity.TOP | Gravity.START);
+        expansion.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        if (existing != null) expansion.setText(existing[1]);
+        LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        elp.topMargin = dp(10);
+        expansion.setLayoutParams(elp);
+        container.addView(expansion);
+
+        new AlertDialog.Builder(this)
+                .setTitle(existing == null ? "Add snippet" : "Edit snippet")
+                .setView(container)
+                .setPositiveButton("Save", (d, w) -> {
+                    String t = trigger.getText().toString().trim();
+                    String ex = expansion.getText().toString();
+                    if (TextUtils.isEmpty(t) || TextUtils.isEmpty(ex)) {
+                        Toast.makeText(this, "Trigger and expansion are required.",
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    // The internal storage uses \u0001 / \u0002 separators; reject
+                    // any input that already contains them to keep the format safe.
+                    if (t.indexOf('\u0001') >= 0 || t.indexOf('\u0002') >= 0
+                            || ex.indexOf('\u0001') >= 0 || ex.indexOf('\u0002') >= 0) {
+                        Toast.makeText(this, "Invalid characters in snippet.",
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    List<String[]> all = new ArrayList<>(loadCustomSnippets(lang));
+                    if (existing != null) {
+                        for (int i = 0; i < all.size(); i++) {
+                            if (all.get(i)[0].equals(existing[0])) {
+                                all.set(i, new String[]{t, ex});
+                                break;
+                            }
+                        }
+                    } else {
+                        // Replace if a snippet with the same trigger already exists,
+                        // otherwise append.
+                        boolean replaced = false;
+                        for (int i = 0; i < all.size(); i++) {
+                            if (all.get(i)[0].equals(t)) {
+                                all.set(i, new String[]{t, ex});
+                                replaced = true;
+                                break;
+                            }
+                        }
+                        if (!replaced) all.add(new String[]{t, ex});
+                    }
+                    saveCustomSnippets(lang, all);
+                    if (onSaved != null) onSaved.run();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Loads the user's custom snippets for {@code lang} (see IME for format). */
+    private List<String[]> loadCustomSnippets(String lang) {
+        ArrayList<String[]> out = new ArrayList<>();
+        if (lang == null) return out;
+        String raw = prefs.getString("custom_snip_" + lang, "");
+        if (TextUtils.isEmpty(raw)) return out;
+        for (String pair : raw.split("\u0002")) {
+            if (pair.isEmpty()) continue;
+            int sep = pair.indexOf('\u0001');
+            if (sep <= 0 || sep >= pair.length() - 1) continue;
+            out.add(new String[]{pair.substring(0, sep), pair.substring(sep + 1)});
+        }
+        return out;
+    }
+
+    private void saveCustomSnippets(String lang, List<String[]> snippets) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < snippets.size(); i++) {
+            if (i > 0) sb.append('\u0002');
+            String[] s = snippets.get(i);
+            sb.append(s[0]).append('\u0001').append(s[1]);
+        }
+        prefs.edit().putString("custom_snip_" + lang, sb.toString()).apply();
     }
 
     private void addCustomLanguageFromInput() {
