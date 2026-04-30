@@ -539,7 +539,6 @@ public class CodeKeysIME extends InputMethodService {
                 /* onCategoryTap */ key -> {
                     emojiEngine.setCategory(key);
                     refreshEmojiPanel();
-                    renderEmojiSearchInStrip();
                 },
                 /* onEmojiTap */ emoji -> {
                     haptic(emojiPanelView);
@@ -548,58 +547,21 @@ public class CodeKeysIME extends InputMethodService {
                     noteOperation();
                 },
                 /* onClearSearch */ () -> {
+                    haptic(emojiPanelView);
                     emojiEngine.clearSearch();
                     refreshEmojiPanel();
-                    renderEmojiSearchInStrip();
                 });
-        renderEmojiSearchInStrip();
     }
 
+    /**
+     * The emoji search bar now lives at the bottom of the emoji panel itself,
+     * so the suggestion strip stays out of the way while emoji is open. We
+     * just blank it out (no "type to search" hint, no chips) to keep the look
+     * uncluttered and consistent with Gboard.
+     */
     private void renderEmojiSearchInStrip() {
         if (rowSuggestions == null) return;
         rowSuggestions.removeAllViews();
-        int textCol = getKeyTextColor();
-        int accent = getAccentColor();
-
-        TextView prompt = new TextView(this);
-        prompt.setText("🔍");
-        prompt.setTextSize(13f);
-        prompt.setPadding(dp(8), 0, dp(6), 0);
-        prompt.setGravity(Gravity.CENTER_VERTICAL);
-        rowSuggestions.addView(prompt);
-
-        TextView query = new TextView(this);
-        if (!emojiEngine.isSearching()) {
-            query.setText("Type letters to search emoji…");
-            query.setTextColor(dim(textCol));
-        } else {
-            query.setText(emojiEngine.getSearchQuery());
-            query.setTextColor(accent);
-        }
-        query.setTextSize(13f);
-        query.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams qlp = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
-        query.setLayoutParams(qlp);
-        rowSuggestions.addView(query);
-
-        if (emojiEngine.isSearching()) {
-            Button clear = new Button(this);
-            clear.setText("✕");
-            clear.setAllCaps(false);
-            clear.setTextSize(13f);
-            clear.setTextColor(textCol);
-            clear.setBackgroundColor(0x00000000);
-            clear.setOnClickListener(v -> {
-                haptic(v);
-                emojiEngine.clearSearch();
-                refreshEmojiPanel();
-            });
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                    dp(40), ViewGroup.LayoutParams.MATCH_PARENT);
-            clear.setLayoutParams(clp);
-            rowSuggestions.addView(clear);
-        }
     }
 
     // ─── Clipboard panel ─────────────────────────────────────────────────────

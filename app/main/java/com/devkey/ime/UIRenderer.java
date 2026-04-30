@@ -114,18 +114,36 @@ final class UIRenderer {
     void fillEmojiPanel(View panelView, EmojiEngine engine,
                         int keyBg, int textCol, int accent,
                         CategoryTap onCategory, EmojiTap onEmoji, Runnable onClearSearch) {
-        // ── Search bar ──
+        // ── Bottom search bar (pill + key-styled clear) ──
         TextView searchText = panelView.findViewById(R.id.emoji_search_text);
         Button clearBtn = panelView.findViewById(R.id.emoji_search_clear);
-        if (engine.isSearching()) {
-            searchText.setText(engine.getSearchQuery());
-            searchText.setTextColor(accent);
-            clearBtn.setVisibility(View.VISIBLE);
+        LinearLayout pill = panelView.findViewById(R.id.emoji_search_pill);
+
+        // Pill: rounded surface a touch lighter than the panel background so
+        // it reads as elevated. Becomes accent-tinted while a query is active.
+        if (pill != null) {
+            int pillFill = engine.isSearching()
+                    ? CodeKeysIME.blend(keyBg, accent, 0.18f)
+                    : CodeKeysIME.blend(keyBg, 0xFFFFFFFF, 0.06f);
+            pill.setBackground(roundedFill(pillFill, ime.dp(22)));
+        }
+
+        if (searchText != null) {
+            if (engine.isSearching()) {
+                searchText.setText(engine.getSearchQuery());
+                searchText.setTextColor(accent);
+            } else {
+                searchText.setText("Search");
+                searchText.setTextColor(dim(textCol));
+            }
+        }
+
+        if (clearBtn != null) {
+            // Always-visible clear key, styled like the keyboard backspace key.
+            clearBtn.setText(engine.isSearching() ? "✕" : "⌫");
+            clearBtn.setTextColor(engine.isSearching() ? accent : textCol);
+            clearBtn.setBackground(roundedFill(keyBg, ime.dp(12)));
             clearBtn.setOnClickListener(v -> onClearSearch.run());
-        } else {
-            searchText.setText("Type to search emoji…");
-            searchText.setTextColor(dim(textCol));
-            clearBtn.setVisibility(View.GONE);
         }
 
         // ── Category tabs (plain Button + rounded background) ──
