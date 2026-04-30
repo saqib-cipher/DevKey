@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    panel_keyboard.xml — Default QWERTY panel.
+    Used by both the KEYBOARD and SYMBOLS panel modes (the latter just refills
+    the letter rows with symbol glyphs at runtime).
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Symbol toolbar (scrollable) -->
+    <HorizontalScrollView
+        android:id="@+id/symbol_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:scrollbars="none"
+        android:background="#141428">
+
+        <LinearLayout
+            android:id="@+id/row_symbols"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
+    </HorizontalScrollView>
+
+    <!-- Snippet shortcuts (scrollable) -->
+    <HorizontalScrollView
+        android:id="@+id/snippet_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:scrollbars="none"
+        android:background="#0D0D1F">
+
+        <LinearLayout
+            android:id="@+id/row_snippets"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
+    </HorizontalScrollView>
+
+    <!-- Numbers (1–0) -->
+    <LinearLayout
+        android:id="@+id/row_numbers"
+        android:layout_width="match_parent"
+        android:layout_height="42dp"
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp" />
+
+    <!-- QWERTY top row -->
+    <LinearLayout
+        android:id="@+id/row_letters1"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp" />
+
+    <!-- ASDFG row -->
+    <LinearLayout
+        android:id="@+id/row_letters2"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:paddingStart="22dp"
+        android:paddingEnd="22dp" />
+
+    <!-- Bottom letter row + caps + backspace -->
+    <LinearLayout
+        android:id="@+id/row_letters3_wrap"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <Button
+            android:id="@+id/btn_caps"
+            android:layout_width="46dp"
+            android:layout_height="match_parent"
+            android:text="⇧"
+            android:textSize="16sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545"
+            android:layout_marginEnd="2dp"
+            android:padding="2dp" />
+
+        <LinearLayout
+            android:id="@+id/row_letters3"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="horizontal" />
+
+        <Button
+            android:id="@+id/btn_backspace"
+            android:layout_width="56dp"
+            android:layout_height="match_parent"
+            android:text="⌫"
+            android:textSize="16sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545"
+            android:layout_marginStart="2dp"
+            android:padding="2dp" />
+    </LinearLayout>
+</LinearLayout>
