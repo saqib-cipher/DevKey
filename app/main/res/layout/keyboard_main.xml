@@ -136,7 +136,7 @@
             android:id="@+id/btn_space"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="3"
+            android:layout_weight="6"
             android:layout_margin="@dimen/key_margin"
             android:text="space"
             android:textSize="12sp"

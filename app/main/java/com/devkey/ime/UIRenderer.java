@@ -113,7 +113,8 @@ final class UIRenderer {
      */
     void fillEmojiPanel(View panelView, EmojiEngine engine,
                         int keyBg, int textCol, int accent,
-                        CategoryTap onCategory, EmojiTap onEmoji, Runnable onClearSearch) {
+                        CategoryTap onCategory, EmojiTap onEmoji,
+                        Runnable onBackspaceSearch, Runnable onClearSearch) {
         // ── Bottom search bar (pill + key-styled clear) ──
         TextView searchText = panelView.findViewById(R.id.emoji_search_text);
         Button clearBtn = panelView.findViewById(R.id.emoji_search_clear);
@@ -139,11 +140,14 @@ final class UIRenderer {
         }
 
         if (clearBtn != null) {
-            // Always-visible clear key, styled like the keyboard backspace key.
-            clearBtn.setText(engine.isSearching() ? "✕" : "⌫");
+            // Always-visible backspace-style key. Tap deletes the last search
+            // character (so it actually behaves like a backspace, matching the
+            // "⌫" glyph); long-press wipes the whole query.
+            clearBtn.setText("⌫");
             clearBtn.setTextColor(engine.isSearching() ? accent : textCol);
             clearBtn.setBackground(roundedFill(keyBg, ime.dp(12)));
-            clearBtn.setOnClickListener(v -> onClearSearch.run());
+            clearBtn.setOnClickListener(v -> onBackspaceSearch.run());
+            clearBtn.setOnLongClickListener(v -> { onClearSearch.run(); return true; });
         }
 
         // ── Category tabs (plain Button + rounded background) ──
@@ -204,6 +208,9 @@ final class UIRenderer {
             btn.setPadding(0, 0, 0, 0);
             btn.setMinHeight(0);
             btn.setMinWidth(0);
+            // Same hover/preview popup the letter keys use, so the user can
+            // see which emoji they're about to commit.
+            btn.setOnTouchListener(ime.keyPreviewToucher(emoji));
             btn.setOnClickListener(v -> onEmoji.onEmoji(emoji));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
             lp.setMargins(ime.dp(2), ime.dp(2), ime.dp(2), ime.dp(2));

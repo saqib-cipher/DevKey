@@ -1,5 +1,7 @@
 package com.codekeys.ime;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -80,6 +82,8 @@ public class CodeKeysIME extends InputMethodService {
     private SharedPreferences prefs;
     private Vibrator vibrator;
     private AudioManager audio;
+    private ClipboardManager systemClipboard;
+    private ClipboardManager.OnPrimaryClipChangedListener clipboardListener;
 
     // Modules
     private InputEngine inputEngine;
@@ -104,6 +108,8 @@ public class CodeKeysIME extends InputMethodService {
     private View keyboardPanelView;
     private View emojiPanelView;
     private View clipboardPanelView;
+    /** Wrapper used in EMOJI mode that stacks emoji grid + main QWERTY for search. */
+    private LinearLayout emojiCombinedView;
 
     // Bottom action row
     private Button btnEnter, btnSettings, btnSymbolsPanel, btnEmoji, btnSpace;
@@ -226,6 +232,53 @@ public class CodeKeysIME extends InputMethodService {
         emojiEngine      = new EmojiEngine(prefs);
         clipboardStore   = new ClipboardStore(prefs);
         ui               = new UIRenderer(this);
+        registerSystemClipboardListener();
+    }
+
+    @Override
+    public void onDestroy() {
+        unregisterSystemClipboardListener();
+        super.onDestroy();
+    }
+
+    /**
+     * Registers a listener with the system {@link ClipboardManager} so that
+     * anything copied anywhere on the device (browsers, other apps, long-press
+     * copy menus, etc.) is mirrored into our in-keyboard {@link ClipboardStore}.
+     *
+     * <p>While the IME is the active input method, the system grants it
+     * foreground status, which is required to read the primary clip on
+     * Android 10+. Read failures (e.g. password-protected clips) are silently
+     * ignored.
+     */
+    private void registerSystemClipboardListener() {
+        systemClipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (systemClipboard == null) return;
+        clipboardListener = () -> {
+            try {
+                if (systemClipboard == null || !systemClipboard.hasPrimaryClip()) return;
+                ClipData clip = systemClipboard.getPrimaryClip();
+                if (clip == null || clip.getItemCount() == 0) return;
+                CharSequence text = clip.getItemAt(0).coerceToText(this);
+                if (TextUtils.isEmpty(text)) return;
+                clipboardStore.add(text.toString());
+                if (panelMode == PanelMode.CLIPBOARD) refreshClipboardPanel();
+            } catch (Exception ignored) {
+                // Some apps mark clips as sensitive — reading throws. Skip.
+            }
+        };
+        try {
+            systemClipboard.addPrimaryClipChangedListener(clipboardListener);
+        } catch (Exception ignored) {}
+    }
+
+    private void unregisterSystemClipboardListener() {
+        if (systemClipboard != null && clipboardListener != null) {
+            try { systemClipboard.removePrimaryClipChangedListener(clipboardListener); }
+            catch (Exception ignored) {}
+        }
+        clipboardListener = null;
+        systemClipboard = null;
     }
 
     @Override
@@ -257,6 +310,10 @@ public class CodeKeysIME extends InputMethodService {
         emojiEngine.clearSearch();
         undoableOps = 0;
         redoableOps = 0;
+        // Re-register the system clipboard listener if needed and capture the
+        // current clip. On API 29+ this only succeeds while the IME has focus.
+        if (clipboardListener == null) registerSystemClipboardListener();
+        captureCurrentSystemClip();
         if (keyboardView != null) {
             buildPcKeysRow();
             updateEnterButton(info);
@@ -265,6 +322,18 @@ public class CodeKeysIME extends InputMethodService {
             refreshHistoryButtonsState();
             refreshArrowButtonsState();
         }
+    }
+
+    /** Reads whatever is currently on the system clipboard right now. */
+    private void captureCurrentSystemClip() {
+        if (systemClipboard == null) return;
+        try {
+            if (!systemClipboard.hasPrimaryClip()) return;
+            ClipData clip = systemClipboard.getPrimaryClip();
+            if (clip == null || clip.getItemCount() == 0) return;
+            CharSequence text = clip.getItemAt(0).coerceToText(this);
+            if (!TextUtils.isEmpty(text)) clipboardStore.add(text.toString());
+        } catch (Exception ignored) {}
     }
 
     @Override
@@ -308,7 +377,17 @@ public class CodeKeysIME extends InputMethodService {
             haptic(v);
             switchPanel(panelMode == PanelMode.EMOJI ? PanelMode.KEYBOARD : PanelMode.EMOJI);
         });
-        btnSpace.setOnClickListener(v -> { haptic(v); onSpace(); });
+        btnSpace.setOnClickListener(v -> {
+            haptic(v);
+            // While the clipboard panel is open, the giant space bar doubles as
+            // an "back to keyboard" button — committing whitespace there isn't
+            // what the user wants and the explicit ABC button is too small.
+            if (panelMode == PanelMode.CLIPBOARD) {
+                switchPanel(PanelMode.KEYBOARD);
+            } else {
+                onSpace();
+            }
+        });
         btnEnter.setOnClickListener(v -> { haptic(v); performEnterAction(); });
         btnUndo.setOnClickListener(v -> { haptic(v); doUndo(); });
         btnRedo.setOnClickListener(v -> { haptic(v); doRedo(); });
@@ -335,8 +414,7 @@ public class CodeKeysIME extends InputMethodService {
         View view;
         switch (target) {
             case EMOJI:
-                if (emojiPanelView == null) emojiPanelView = ui.inflateEmojiPanel(panelContainer);
-                view = emojiPanelView;
+                view = buildEmojiCombinedView();
                 refreshEmojiPanel();
                 break;
             case CLIPBOARD:
@@ -376,6 +454,11 @@ public class CodeKeysIME extends InputMethodService {
             btnSymbolsPanel.setBackgroundColor(panelMode == PanelMode.SYMBOLS ? getAccentColor() : getKeyBgColor());
         if (btnEmoji != null)
             btnEmoji.setBackgroundColor(panelMode == PanelMode.EMOJI ? getAccentColor() : getKeyBgColor());
+        // The space bar's label changes role with the panel: in clipboard mode
+        // it acts as an "back to keyboard" button instead of inserting space.
+        if (btnSpace != null) {
+            btnSpace.setText(panelMode == PanelMode.CLIPBOARD ? "ABC — back to keyboard" : "space");
+        }
 
         applyKeyboardHeight();
         if (panelMode == PanelMode.KEYBOARD || panelMode == PanelMode.SYMBOLS) {
@@ -384,6 +467,55 @@ public class CodeKeysIME extends InputMethodService {
             renderEmojiSearchInStrip();
         } else if (panelMode == PanelMode.CLIPBOARD) {
             renderClipboardHintInStrip();
+        }
+    }
+
+    /**
+     * Builds (or refreshes) the EMOJI mode wrapper that stacks the emoji grid
+     * panel on top of a stripped-down QWERTY keyboard. Letter taps on the
+     * keyboard route into the emoji search via {@link #commitChar(String)}; the
+     * keyboard's backspace pops search characters too. Non-letter rows
+     * (symbol toolbar, snippet row, number row) are hidden so the panel stays
+     * keyboard-height while still offering full QWERTY input for searching.
+     */
+    private View buildEmojiCombinedView() {
+        if (emojiPanelView == null) emojiPanelView = ui.inflateEmojiPanel(panelContainer);
+        if (keyboardPanelView == null) keyboardPanelView = ui.inflateKeyboardPanel(panelContainer);
+        bindKeyboardPanelChildren();
+        // Refill QWERTY (letters only) so caps state is up-to-date.
+        buildQwertyRows();
+        refreshCapsButtonStyle();
+        // Hide rows that aren't useful while searching emoji.
+        if (rowSymbols != null) ((View) rowSymbols.getParent()).setVisibility(View.GONE);
+        if (rowSnippets != null) ((View) rowSnippets.getParent()).setVisibility(View.GONE);
+        if (rowNumbers != null) rowNumbers.setVisibility(View.GONE);
+        // Compress the emoji grid so the combined panel still fits the
+        // keyboard footprint instead of pushing the bottom action row off the
+        // screen. Tabs + search + grid + QWERTY ≈ a normal keyboard height.
+        View emojiGridScroll = emojiPanelView.findViewById(R.id.emoji_grid_scroll);
+        if (emojiGridScroll != null) {
+            ViewGroup.LayoutParams lp = emojiGridScroll.getLayoutParams();
+            if (lp != null) { lp.height = dp(120); emojiGridScroll.setLayoutParams(lp); }
+        }
+        if (emojiCombinedView == null) {
+            emojiCombinedView = new LinearLayout(this);
+            emojiCombinedView.setOrientation(LinearLayout.VERTICAL);
+        }
+        // Detach panels from any current parent before re-stacking.
+        detachFromParent(emojiPanelView);
+        detachFromParent(keyboardPanelView);
+        emojiCombinedView.removeAllViews();
+        emojiCombinedView.addView(emojiPanelView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        emojiCombinedView.addView(keyboardPanelView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        return emojiCombinedView;
+    }
+
+    private static void detachFromParent(View v) {
+        if (v == null) return;
+        if (v.getParent() instanceof ViewGroup) {
+            ((ViewGroup) v.getParent()).removeView(v);
         }
     }
 
@@ -405,6 +537,8 @@ public class CodeKeysIME extends InputMethodService {
 
     private void fillKeyboardLayout() {
         rowNumbers.setVisibility(View.VISIBLE);
+        if (rowSymbols != null) ((View) rowSymbols.getParent()).setVisibility(View.VISIBLE);
+        if (rowSnippets != null) ((View) rowSnippets.getParent()).setVisibility(View.VISIBLE);
         buildNumberRow();
         buildQwertyRows();
         buildSymbolRow();
@@ -413,16 +547,26 @@ public class CodeKeysIME extends InputMethodService {
     }
 
     private void fillSymbolsLayout() {
-        rowNumbers.setVisibility(View.GONE);
-        rowSymbols.removeAllViews();
-        rowSnippets.removeAllViews();
+        // Keep numbers / lang symbols / snippets visible in symbols mode so the
+        // user has every glyph in reach without flipping back to QWERTY.
+        rowNumbers.setVisibility(View.VISIBLE);
+        if (rowSymbols != null) ((View) rowSymbols.getParent()).setVisibility(View.VISIBLE);
+        if (rowSnippets != null) ((View) rowSnippets.getParent()).setVisibility(View.VISIBLE);
         rowLetters1.removeAllViews();
         rowLetters2.removeAllViews();
         rowLetters3.removeAllViews();
 
+        // Lang-aware top toolbar + numbers row stay populated.
+        buildSymbolRow();
+        buildNumberRow();
+
+        // Extra symbol rows in the letter slots — combine the static
+        // SYMBOL_PANEL with whatever extras the active language defines so the
+        // user sees more glyphs than the cramped GENERAL set.
+        String[][] rows = buildSymbolKeyRows();
         LinearLayout[] containers = {rowLetters1, rowLetters2, rowLetters3};
-        for (int i = 0; i < SYMBOL_PANEL.length && i < containers.length; i++) {
-            for (final String s : SYMBOL_PANEL[i]) {
+        for (int i = 0; i < rows.length && i < containers.length; i++) {
+            for (final String s : rows[i]) {
                 Button btn = ui.makeKey(s, getKeyBgColor(), getKeyTextColor());
                 btn.setOnTouchListener(previewToucher(s));
                 btn.setOnClickListener(v -> { haptic(v); insertSymbolWithAutoClose(s); });
@@ -433,10 +577,66 @@ public class CodeKeysIME extends InputMethodService {
                 containers[i].addView(btn);
             }
         }
-        // Symbols panel keeps the symbol toolbar empty (we're already in symbols).
-        // Snippets row stays available so the user can still trigger them.
         buildSnippetRow();
-        refreshCapsButtonStyle();
+        // Caps doesn't apply to symbols — repurpose that slot as a glyph
+        // insert ("•") so we don't waste a key. refreshCapsButtonStyle() is
+        // not called here so the new label sticks.
+        if (btnCaps != null) {
+            btnCaps.setText("•");
+            btnCaps.setTextColor(getAccentColor());
+            btnCaps.setBackground(ui.roundedFill(getKeyBgColor(), dp(10)));
+            btnCaps.setOnClickListener(v -> { haptic(v); insertSymbolWithAutoClose("•"); });
+        }
+    }
+
+    /**
+     * Builds the three rows of symbols shown in the QWERTY slots while in
+     * symbols mode. The static {@link #SYMBOL_PANEL} provides the base set;
+     * any glyph in the active language's symbol set that isn't already on
+     * screen (toolbar / numbers / static panel) is appended so the user has a
+     * superset, not just a duplicate of the lang toolbar.
+     */
+    private String[][] buildSymbolKeyRows() {
+        String[][] base = SYMBOL_PANEL;
+        String[] langSymbols = LANG_SYMBOLS.containsKey(currentLang)
+                ? LANG_SYMBOLS.get(currentLang) : LANG_SYMBOLS.get("GENERAL");
+        java.util.LinkedHashSet<String> seen = new java.util.LinkedHashSet<>();
+        for (String[] row : base) for (String s : row) seen.add(s);
+        for (String n : new String[]{"1","2","3","4","5","6","7","8","9","0"}) seen.add(n);
+        ArrayList<String> extras = new ArrayList<>();
+        if (langSymbols != null) {
+            for (String s : langSymbols) {
+                if (!seen.contains(s)) { extras.add(s); seen.add(s); }
+            }
+        }
+        // Append a small set of useful extra glyphs the user might want.
+        for (String s : new String[]{"~","^","¬","°","±","€","£","¥","§","¶"}) {
+            if (!seen.contains(s)) { extras.add(s); seen.add(s); }
+        }
+        if (extras.isEmpty()) return base;
+        // Distribute extras across rows 1 and 2 so no single row blows past
+        // ~12 keys (each row would otherwise become unusably narrow).
+        ArrayList<String> r0 = new ArrayList<>();
+        for (String s : base[0]) r0.add(s);
+        ArrayList<String> r1 = new ArrayList<>();
+        for (String s : base[1]) r1.add(s);
+        ArrayList<String> r2 = new ArrayList<>();
+        for (String s : base[2]) r2.add(s);
+        for (String e : extras) {
+            ArrayList<String> target = r1.size() <= r2.size() ? r1 : r2;
+            if (target.size() >= 12) {
+                if (r1.size() < 12) target = r1;
+                else if (r2.size() < 12) target = r2;
+                else if (r0.size() < 12) target = r0;
+                else break;
+            }
+            target.add(e);
+        }
+        return new String[][]{
+                r0.toArray(new String[0]),
+                r1.toArray(new String[0]),
+                r2.toArray(new String[0])
+        };
     }
 
     private void buildNumberRow() {
@@ -545,6 +745,18 @@ public class CodeKeysIME extends InputMethodService {
                     inputEngine.commit(emoji);
                     emojiEngine.rememberRecent(emoji);
                     noteOperation();
+                },
+                /* onBackspaceSearch */ () -> {
+                    haptic(emojiPanelView);
+                    if (emojiEngine.isSearching()) {
+                        emojiEngine.popSearchChar();
+                    } else if (inputEngine.deleteOne()) {
+                        // No active search — fall back to deleting the last
+                        // committed character, so the in-panel ⌫ key never
+                        // feels broken even when the search box is empty.
+                        noteDeletion();
+                    }
+                    refreshEmojiPanel();
                 },
                 /* onClearSearch */ () -> {
                     haptic(emojiPanelView);
@@ -947,6 +1159,11 @@ public class CodeKeysIME extends InputMethodService {
     }
 
     // ─── Key preview popup ────────────────────────────────────────────────────
+    /** Package-private so the emoji panel can re-use the same preview behaviour. */
+    View.OnTouchListener keyPreviewToucher(final String label) {
+        return previewToucher(label);
+    }
+
     private View.OnTouchListener previewToucher(final String label) {
         return (v, ev) -> {
             if (ev.getAction() == MotionEvent.ACTION_DOWN) showKeyPreview(v, label);
