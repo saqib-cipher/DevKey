@@ -1,5 +1,8 @@
 package com.codekeys.ime;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Typeface;
@@ -24,9 +27,14 @@ import android.text.InputType;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 /**
  * SettingsActivity — preferences screen for CodeKeys.
@@ -57,7 +65,9 @@ public class SettingsActivity extends AppCompatActivity {
     private View titleSwatch;
     private TextView title, subtitle, footer;
     private Button btnEnableIme, btnPickIme, btnAddLang, btnReset;
-    private EditText editNewLang;
+    private Button btnInfo, btnExport, btnImport, btnClearPreview;
+    private EditText editNewLang, editPreview;
+    private LinearLayout previewCard, backupCard;
 
     // ── Theme palette: { bgColor, keyColor, textColor, accentColor } ──────────
     private static final int[][] THEMES = {
@@ -111,6 +121,13 @@ public class SettingsActivity extends AppCompatActivity {
         btnAddLang           = findViewById(R.id.btn_add_lang);
         btnReset             = findViewById(R.id.btn_reset);
         editNewLang          = findViewById(R.id.edit_new_lang);
+        btnInfo              = findViewById(R.id.btn_info);
+        btnExport            = findViewById(R.id.btn_export);
+        btnImport            = findViewById(R.id.btn_import);
+        btnClearPreview      = findViewById(R.id.btn_clear_preview);
+        editPreview          = findViewById(R.id.edit_preview);
+        previewCard          = findViewById(R.id.preview_card);
+        backupCard           = findViewById(R.id.backup_card);
     }
 
     private void wireListeners() {
@@ -129,6 +146,13 @@ public class SettingsActivity extends AppCompatActivity {
             prefs.edit().clear().apply();
             Toast.makeText(this, "Settings reset.", Toast.LENGTH_SHORT).show();
             recreate();
+        });
+
+        if (btnInfo != null) btnInfo.setOnClickListener(v -> showInfoDialog());
+        if (btnExport != null) btnExport.setOnClickListener(v -> exportSettingsJson());
+        if (btnImport != null) btnImport.setOnClickListener(v -> showImportDialog());
+        if (btnClearPreview != null) btnClearPreview.setOnClickListener(v -> {
+            if (editPreview != null) editPreview.setText("");
         });
     }
 
@@ -152,6 +176,254 @@ public class SettingsActivity extends AppCompatActivity {
         btnPickIme.setTextColor(textCol);
 
         snippetRefBox.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.03f));
+
+        if (previewCard != null) previewCard.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
+        if (editPreview != null) {
+            editPreview.setTextColor(textCol);
+            editPreview.setHintTextColor(dim(textCol));
+            editPreview.setBackgroundColor(blend(bg, 0xFF000000, 0.25f));
+        }
+        if (btnClearPreview != null) {
+            btnClearPreview.setTextColor(dim(textCol));
+            btnClearPreview.setBackgroundColor(blend(bg, 0xFF000000, 0.25f));
+        }
+        if (btnInfo != null) {
+            btnInfo.setTextColor(accent);
+            btnInfo.setBackgroundColor(blend(bg, accent, 0.15f));
+        }
+        if (backupCard != null) backupCard.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
+        if (btnExport != null) {
+            btnExport.setTextColor(accent);
+            btnExport.setBackgroundColor(blend(bg, accent, 0.15f));
+        }
+        if (btnImport != null) {
+            btnImport.setTextColor(textCol);
+            btnImport.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.05f));
+        }
+    }
+
+    // ─── Info / help ──────────────────────────────────────────────────────────
+    private void showInfoDialog() {
+        String body =
+                "CodeKeys is a developer-focused on-screen keyboard.\n\n" +
+                "• Suggestions strip — autocomplete with corrections.\n" +
+                "• Snippet row — language-aware code templates (fn, for, if…).\n" +
+                "• Symbol row — frequently typed symbols, swipeable.\n" +
+                "• Emoji panel — search emoji by name (🔍).\n" +
+                "• Clipboard panel — recent copies with pin & paste.\n" +
+                "• PC keys row — Esc, Tab, Ctrl, F-keys, Home/End/PgUp/PgDn.\n" +
+                "• Themes — eight presets, instant accent recolour.\n" +
+                "• Custom snippets — add your own per-language triggers.\n" +
+                "• Backup & Restore — export/import as JSON (this screen).\n\n" +
+                "Setup:\n" +
+                "  ① Tap “Enable CodeKeys in System Settings”\n" +
+                "  ② Tap “Switch to CodeKeys (open IME picker)”\n\n" +
+                "Tip: long-press a snippet to see a preview of what it inserts.";
+
+        new AlertDialog.Builder(this)
+                .setTitle("About CodeKeys")
+                .setMessage(body)
+                .setPositiveButton("Got it", null)
+                .show();
+    }
+
+    // ─── Backup / restore (JSON) ──────────────────────────────────────────────
+    /**
+     * Builds a JSON document containing every CodeKeys preference. Preferences
+     * the user has never set are stored under their actual current value, so
+     * exports are self-contained and re-importing them deterministically
+     * restores the keyboard's state.
+     */
+    private String buildBackupJson() {
+        try {
+            JSONObject root = new JSONObject();
+            root.put("app", "CodeKeys");
+            root.put("version", 1);
+
+            JSONObject all = new JSONObject();
+            for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
+                Object v = entry.getValue();
+                if (v == null) {
+                    all.put(entry.getKey(), JSONObject.NULL);
+                } else if (v instanceof Boolean) {
+                    all.put(entry.getKey(), ((Boolean) v).booleanValue());
+                } else if (v instanceof Integer) {
+                    all.put(entry.getKey(), ((Integer) v).intValue());
+                } else if (v instanceof Long) {
+                    all.put(entry.getKey(), ((Long) v).longValue());
+                } else if (v instanceof Float) {
+                    all.put(entry.getKey(), (double) ((Float) v).floatValue());
+                } else if (v instanceof Double) {
+                    all.put(entry.getKey(), ((Double) v).doubleValue());
+                } else {
+                    all.put(entry.getKey(), v.toString());
+                }
+            }
+            root.put("prefs", all);
+
+            // Snippets — stored under custom_snip_<LANG> keys; we mirror them
+            // into a structured array so a backup can be hand-edited safely.
+            JSONArray snippets = new JSONArray();
+            for (String lang : getAllLanguages()) {
+                List<String[]> rows = loadCustomSnippets(lang);
+                if (rows.isEmpty()) continue;
+                JSONObject langObj = new JSONObject();
+                langObj.put("lang", lang);
+                JSONArray arr = new JSONArray();
+                for (String[] s : rows) {
+                    JSONObject pair = new JSONObject();
+                    pair.put("trigger", s[0]);
+                    pair.put("expansion", s[1]);
+                    arr.put(pair);
+                }
+                langObj.put("entries", arr);
+                snippets.put(langObj);
+            }
+            root.put("snippets", snippets);
+
+            return root.toString(2);
+        } catch (JSONException e) {
+            return "{\"error\":\"failed to build backup: " + e.getMessage() + "\"}";
+        }
+    }
+
+    private void exportSettingsJson() {
+        final String json = buildBackupJson();
+
+        ScrollView scroll = new ScrollView(this);
+        EditText box = new EditText(this);
+        box.setText(json);
+        box.setTextSize(11f);
+        box.setTypeface(Typeface.MONOSPACE);
+        box.setPadding(dp(12), dp(10), dp(12), dp(10));
+        box.setMinLines(8);
+        box.setGravity(Gravity.TOP | Gravity.START);
+        box.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        scroll.addView(box);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Export — copy this JSON")
+                .setView(scroll)
+                .setPositiveButton("Copy", (d, w) -> {
+                    ClipboardManager cm = (ClipboardManager)
+                            getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (cm != null) {
+                        cm.setPrimaryClip(ClipData.newPlainText("CodeKeys backup", json));
+                        Toast.makeText(this, "Backup copied to clipboard.",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    private void showImportDialog() {
+        ScrollView scroll = new ScrollView(this);
+        final EditText box = new EditText(this);
+        box.setHint("Paste a CodeKeys backup JSON here…");
+        box.setTextSize(11f);
+        box.setTypeface(Typeface.MONOSPACE);
+        box.setPadding(dp(12), dp(10), dp(12), dp(10));
+        box.setMinLines(6);
+        box.setGravity(Gravity.TOP | Gravity.START);
+        box.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        scroll.addView(box);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Import backup")
+                .setMessage("This will overwrite your themes, snippets, and settings.")
+                .setView(scroll)
+                .setPositiveButton("Import", (d, w) -> {
+                    String text = box.getText().toString().trim();
+                    if (TextUtils.isEmpty(text)) {
+                        Toast.makeText(this, "Nothing to import.",
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (applyBackupJson(text)) {
+                        Toast.makeText(this, "Backup imported.",
+                                Toast.LENGTH_SHORT).show();
+                        recreate();
+                    } else {
+                        Toast.makeText(this, "Invalid backup JSON.",
+                                Toast.LENGTH_LONG).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /**
+     * Applies a backup JSON document to {@link #prefs} in a single atomic
+     * commit. Returns {@code false} if the document doesn't look like a
+     * CodeKeys backup so the caller can show an error.
+     */
+    private boolean applyBackupJson(String text) {
+        try {
+            JSONObject root = new JSONObject(text);
+
+            SharedPreferences.Editor ed = prefs.edit();
+            ed.clear();
+
+            JSONObject p = root.optJSONObject("prefs");
+            if (p != null) {
+                java.util.Iterator<String> keys = p.keys();
+                while (keys.hasNext()) {
+                    String k = keys.next();
+                    Object v = p.get(k);
+                    if (v == null || v == JSONObject.NULL) continue;
+                    if (v instanceof Boolean) {
+                        ed.putBoolean(k, (Boolean) v);
+                    } else if (v instanceof Integer) {
+                        ed.putInt(k, (Integer) v);
+                    } else if (v instanceof Long) {
+                        ed.putLong(k, (Long) v);
+                    } else if (v instanceof Double) {
+                        ed.putFloat(k, ((Double) v).floatValue());
+                    } else if (v instanceof Float) {
+                        ed.putFloat(k, (Float) v);
+                    } else {
+                        ed.putString(k, v.toString());
+                    }
+                }
+            }
+
+            // Snippets: rebuild custom_snip_<LANG> values from the structured
+            // form so old export formats stay valid.
+            JSONArray snippets = root.optJSONArray("snippets");
+            if (snippets != null) {
+                for (int i = 0; i < snippets.length(); i++) {
+                    JSONObject langObj = snippets.optJSONObject(i);
+                    if (langObj == null) continue;
+                    String lang = langObj.optString("lang", "");
+                    if (TextUtils.isEmpty(lang)) continue;
+                    JSONArray arr = langObj.optJSONArray("entries");
+                    if (arr == null) continue;
+                    StringBuilder sb = new StringBuilder();
+                    for (int j = 0; j < arr.length(); j++) {
+                        JSONObject pair = arr.optJSONObject(j);
+                        if (pair == null) continue;
+                        String t = pair.optString("trigger", "");
+                        String ex = pair.optString("expansion", "");
+                        if (TextUtils.isEmpty(t) || TextUtils.isEmpty(ex)) continue;
+                        if (t.indexOf('\u0001') >= 0 || t.indexOf('\u0002') >= 0
+                                || ex.indexOf('\u0001') >= 0
+                                || ex.indexOf('\u0002') >= 0) continue;
+                        if (sb.length() > 0) sb.append('\u0002');
+                        sb.append(t).append('\u0001').append(ex);
+                    }
+                    ed.putString("custom_snip_" + lang, sb.toString());
+                }
+            }
+            ed.apply();
+            return true;
+        } catch (JSONException e) {
+            return false;
+        }
     }
 
     // ─── Preferences (toggles) ────────────────────────────────────────────────

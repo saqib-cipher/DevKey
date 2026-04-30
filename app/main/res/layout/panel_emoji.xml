@@ -1,78 +1,62 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     panel_emoji.xml — emoji panel.
-    Material 3 Expressive: rounded MaterialCardView search bar + scrollable
-    category tabs (MaterialButton, icon-style) + 8-column grid populated at
-    runtime by `UIRenderer.fillEmojiPanel()`.
+    Search bar + scrollable category tabs + 8-column emoji grid.
 
-    The search field is display-only (the keyboard letter taps feed characters
-    into the IME's emoji search engine), so we use a MaterialCardView styled
-    container with a TextView inside instead of a real EditText.
+    NOTE: No Material theme dependencies — IME applies colors programmatically.
 -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical">
 
-    <!-- ── Search bar — pill-shaped MaterialCardView with TextView inside ── -->
-    <com.google.android.material.card.MaterialCardView
+    <!-- Search bar (display-only TextView; letter taps feed search engine) -->
+    <LinearLayout
         android:id="@+id/emoji_search_bar"
         android:layout_width="match_parent"
         android:layout_height="@dimen/emoji_search_height"
-        android:layout_marginStart="8dp"
-        android:layout_marginEnd="8dp"
-        android:layout_marginTop="6dp"
-        android:layout_marginBottom="2dp"
-        app:cardBackgroundColor="?attr/colorSurfaceContainerHighest"
-        app:cardCornerRadius="@dimen/chip_corner_radius"
-        app:cardElevation="0dp"
-        app:strokeWidth="0dp">
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#141428"
+        android:paddingStart="14dp"
+        android:paddingEnd="6dp">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingStart="14dp"
-            android:paddingEnd="6dp">
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🔍"
+            android:textSize="14sp"
+            android:paddingEnd="8dp" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="🔍"
-                android:textSize="14sp"
-                android:paddingEnd="8dp" />
+        <TextView
+            android:id="@+id/emoji_search_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="14sp"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:textColor="#9DA0BF"
+            android:text="Type to search emoji…" />
 
-            <TextView
-                android:id="@+id/emoji_search_text"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:textSize="14sp"
-                android:singleLine="true"
-                android:ellipsize="end"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                android:text="Type to search emoji…" />
+        <Button
+            android:id="@+id/emoji_search_clear"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:text="✕"
+            android:textSize="13sp"
+            android:textColor="#E8E8FF"
+            android:background="@android:color/transparent"
+            android:visibility="gone" />
+    </LinearLayout>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/emoji_search_clear"
-                style="@style/KeyboardKey.Icon"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:text="✕"
-                android:textSize="13sp"
-                android:visibility="gone" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <!-- ── Category tabs (horizontal, scrollable) ── -->
+    <!-- Category tabs (horizontal, scrollable) -->
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="@dimen/emoji_tab_height"
         android:scrollbars="none"
-        android:background="?attr/colorSurface">
+        android:background="#0D0D1F">
 
         <LinearLayout
             android:id="@+id/emoji_category_tabs"
@@ -84,19 +68,14 @@
             android:gravity="center_vertical" />
     </HorizontalScrollView>
 
-    <!--
-        ── 8-column emoji grid ──
-        Vertical column of rows of 8 emojis each, populated at runtime by
-        `UIRenderer.fillEmojiPanel()`. ScrollView keeps every emoji reachable
-        regardless of the active category's size.
-    -->
+    <!-- 8-column emoji grid (rows of 8, runtime-filled) -->
     <ScrollView
         android:id="@+id/emoji_grid_scroll"
         android:layout_width="match_parent"
         android:layout_height="@dimen/emoji_grid_height"
         android:scrollbars="none"
         android:fillViewport="true"
-        android:background="?attr/colorSurface">
+        android:background="#1A1A2E">
 
         <LinearLayout
             android:id="@+id/emoji_grid"

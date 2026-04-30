@@ -2,26 +2,25 @@
 <!--
     keyboard_main.xml
     ──────────────────────────────────────────────────────────────────────────
-    Material 3 Expressive coding keyboard root.
+    CodeKeys IME root layout.
+
+    IMPORTANT: The IME inflates this layout under the system's
+    `Theme.DeviceDefault.InputMethod`, so we MUST NOT reference any Material
+    theme attributes (?attr/colorSurface, colorPrimaryContainer, etc.) here —
+    those would crash inflation. All colors are baseline fallbacks; the Java
+    side overrides them at runtime via getKeyBgColor() / getAccentColor() etc.
 
     Architecture:
-      • Suggestion strip (M3 chips) — always at the top.
+      • Suggestion strip (chips) — always at the top.
       • Optional PC keys row — togglable from settings.
       • Single content container (FrameLayout) — the active panel view
         (keyboard / emoji / clipboard / symbols) is swapped inside this
         container instead of rebuilding the whole keyboard each time.
       • Bottom action row — caps/space/enter/arrows/etc., always visible.
-
-    All keys use com.google.android.material.button.MaterialButton with
-    Material 3 Expressive styles. Theme attributes (colorSurface,
-    colorPrimaryContainer, …) make the keyboard automatically adapt to
-    the active light/dark Material You palette. Runtime code may override
-    individual tints based on the user's selected accent.
     ──────────────────────────────────────────────────────────────────────────
 -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/keyboard_root"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -30,18 +29,15 @@
     android:paddingBottom="@dimen/keyboard_root_padding_bottom"
     android:paddingStart="4dp"
     android:paddingEnd="4dp"
-    android:elevation="@dimen/keyboard_elevation"
-    android:background="?attr/colorSurface">
+    android:background="#1A1A2E">
 
-    <!-- ══════════════════════════════════════════════════════
-         Suggestion strip (autocomplete chips)
-    ══════════════════════════════════════════════════════ -->
+    <!-- Suggestion strip (autocomplete chips, runtime-filled) -->
     <HorizontalScrollView
         android:id="@+id/suggestion_scroll"
         android:layout_width="match_parent"
         android:layout_height="@dimen/row_suggestion_height"
         android:scrollbars="none"
-        android:background="?attr/colorSurface">
+        android:background="#141428">
 
         <LinearLayout
             android:id="@+id/row_suggestions"
@@ -53,16 +49,13 @@
             android:paddingEnd="8dp" />
     </HorizontalScrollView>
 
-    <!-- ══════════════════════════════════════════════════════
-         Optional PC keys row — Esc Tab Ctrl Alt Shift Win F1–F12 …
-         Toggleable from settings ("show_pc_keys"). Hidden by default.
-    ══════════════════════════════════════════════════════ -->
+    <!-- Optional PC keys row (Esc/Tab/Ctrl/etc.) — toggled by settings -->
     <HorizontalScrollView
         android:id="@+id/pc_keys_scroll"
         android:layout_width="match_parent"
         android:layout_height="@dimen/row_pc_keys_height"
         android:scrollbars="none"
-        android:background="?attr/colorSurfaceContainer"
+        android:background="#0F0F22"
         android:visibility="gone">
 
         <LinearLayout
@@ -75,21 +68,14 @@
             android:paddingEnd="4dp" />
     </HorizontalScrollView>
 
-    <!-- ══════════════════════════════════════════════════════
-         Single panel container — the active panel view is swapped
-         in here at runtime (keyboard / symbols / emoji / clipboard).
-         Height is wrap_content; rows inside scale via key_height_scale.
-    ══════════════════════════════════════════════════════ -->
+    <!-- Single panel container — the active panel view is swapped here -->
     <FrameLayout
         android:id="@+id/panel_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@android:color/transparent" />
 
-    <!-- ══════════════════════════════════════════════════════
-         Bottom action row — settings/symbols/emoji/space/arrows/enter.
-         Always visible regardless of the active panel.
-    ══════════════════════════════════════════════════════ -->
+    <!-- Bottom action row — settings/symbols/emoji/space/arrows/enter -->
     <LinearLayout
         android:id="@+id/row_nav"
         android:layout_width="match_parent"
@@ -101,65 +87,72 @@
         android:gravity="center_vertical">
 
         <!-- Settings / Language popup trigger -->
-        <com.google.android.material.button.MaterialButton
+        <Button
             android:id="@+id/btn_settings"
-            style="@style/KeyboardKey.Special"
             android:layout_width="@dimen/key_action_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
             android:text="⚙"
-            android:textSize="16sp" />
+            android:textSize="16sp"
+            android:textColor="#00E5FF"
+            android:background="#252545"
+            android:padding="0dp" />
 
         <!-- Symbols panel toggle (?123) -->
-        <com.google.android.material.button.MaterialButton
+        <Button
             android:id="@+id/btn_symbols_panel"
-            style="@style/KeyboardKey.Special"
             android:layout_width="@dimen/key_action_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
             android:text="?123"
-            android:textSize="11sp" />
+            android:textSize="11sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545" />
 
         <!-- Emoji panel -->
-        <com.google.android.material.button.MaterialButton
+        <Button
             android:id="@+id/btn_emoji"
-            style="@style/KeyboardKey.Special"
             android:layout_width="@dimen/key_action_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
             android:text="☺"
-            android:textSize="16sp" />
+            android:textSize="16sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545" />
 
         <!-- Undo -->
-        <com.google.android.material.button.MaterialButton
+        <Button
             android:id="@+id/btn_undo"
-            style="@style/KeyboardKey"
             android:layout_width="@dimen/key_undo_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
             android:text="↩"
-            android:textSize="14sp" />
+            android:textSize="14sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545" />
 
         <!-- Space (largest weight so it dominates the row) -->
-        <com.google.android.material.button.MaterialButton
+        <Button
             android:id="@+id/btn_space"
-            style="@style/KeyboardKey.Special"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="3"
             android:layout_margin="@dimen/key_margin"
             android:text="space"
-            android:textSize="12sp" />
+            android:textSize="12sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545" />
 
         <!-- Redo -->
-        <com.google.android.material.button.MaterialButton
+        <Button
             android:id="@+id/btn_redo"
-            style="@style/KeyboardKey"
             android:layout_width="@dimen/key_undo_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
             android:text="↪"
-            android:textSize="14sp" />
+            android:textSize="14sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545" />
 
         <!-- Arrow cluster (vertical: up/down) -->
         <LinearLayout
@@ -168,27 +161,25 @@
             android:orientation="vertical"
             android:layout_marginStart="2dp">
 
-            <com.google.android.material.button.MaterialButton
+            <ImageButton
                 android:id="@+id/btn_arrow_up"
-                style="@style/KeyboardKey.Icon"
                 android:layout_width="@dimen/key_arrow_width"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:layout_marginBottom="1dp"
-                app:icon="@android:drawable/arrow_up_float"
-                app:iconGravity="textStart"
-                app:iconPadding="0dp" />
+                android:src="@android:drawable/arrow_up_float"
+                android:background="#252545"
+                android:scaleType="fitCenter" />
 
-            <com.google.android.material.button.MaterialButton
+            <ImageButton
                 android:id="@+id/btn_arrow_down"
-                style="@style/KeyboardKey.Icon"
                 android:layout_width="@dimen/key_arrow_width"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:layout_marginTop="1dp"
-                app:icon="@android:drawable/arrow_down_float"
-                app:iconGravity="textStart"
-                app:iconPadding="0dp" />
+                android:src="@android:drawable/arrow_down_float"
+                android:background="#252545"
+                android:scaleType="fitCenter" />
         </LinearLayout>
 
         <!-- Arrow cluster (vertical: left/right) -->
@@ -198,38 +189,37 @@
             android:orientation="vertical"
             android:layout_marginStart="2dp">
 
-            <com.google.android.material.button.MaterialButton
+            <ImageButton
                 android:id="@+id/btn_arrow_left"
-                style="@style/KeyboardKey.Icon"
                 android:layout_width="@dimen/key_arrow_width"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:layout_marginBottom="1dp"
-                app:icon="@android:drawable/ic_media_rew"
-                app:iconGravity="textStart"
-                app:iconPadding="0dp" />
+                android:src="@android:drawable/ic_media_rew"
+                android:background="#252545"
+                android:scaleType="fitCenter" />
 
-            <com.google.android.material.button.MaterialButton
+            <ImageButton
                 android:id="@+id/btn_arrow_right"
-                style="@style/KeyboardKey.Icon"
                 android:layout_width="@dimen/key_arrow_width"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:layout_marginTop="1dp"
-                app:icon="@android:drawable/ic_media_ff"
-                app:iconGravity="textStart"
-                app:iconPadding="0dp" />
+                android:src="@android:drawable/ic_media_ff"
+                android:background="#252545"
+                android:scaleType="fitCenter" />
         </LinearLayout>
 
-        <!-- Enter / IME action — special (primary container) -->
-        <com.google.android.material.button.MaterialButton
+        <!-- Enter / IME action -->
+        <Button
             android:id="@+id/btn_enter"
-            style="@style/KeyboardKey.Special"
             android:layout_width="@dimen/key_enter_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
             android:text="↵"
             android:textSize="14sp"
+            android:textColor="#00E5FF"
+            android:background="#252545"
             android:singleLine="true" />
     </LinearLayout>
 

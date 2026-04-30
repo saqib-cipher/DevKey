@@ -2,16 +2,14 @@
 <!--
     panel_keyboard.xml — default QWERTY panel.
     Used by both the KEYBOARD and SYMBOLS panel modes (the latter just refills
-    the letter rows with symbol glyphs at runtime). All inflated keys are
-    Material 3 Expressive MaterialButtons so the keyboard inherits the active
-    Material You palette automatically.
+    the letter rows with symbol glyphs at runtime).
 
-    The row LinearLayouts are populated at runtime by `UIRenderer.makeKey(...)`
-    so they're left empty here.
+    NOTE: All colors here are baseline fallbacks. The IME does NOT depend on
+    Material theme — Java applies the user's accent / key colors at runtime.
+    Row LinearLayouts are populated at runtime by `UIRenderer.makeKey(...)`.
 -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical">
@@ -22,7 +20,7 @@
         android:layout_width="match_parent"
         android:layout_height="@dimen/row_symbol_height"
         android:scrollbars="none"
-        android:background="?attr/colorSurface">
+        android:background="#141428">
 
         <LinearLayout
             android:id="@+id/row_symbols"
@@ -39,7 +37,7 @@
         android:layout_width="match_parent"
         android:layout_height="@dimen/row_snippet_height"
         android:scrollbars="none"
-        android:background="?attr/colorSurfaceContainer">
+        android:background="#0D0D1F">
 
         <LinearLayout
             android:id="@+id/row_snippets"
@@ -86,17 +84,17 @@
         android:paddingStart="2dp"
         android:paddingEnd="2dp">
 
-        <!-- Caps key (Material 3 Expressive, special tint) -->
-        <com.google.android.material.button.MaterialButton
+        <Button
             android:id="@+id/btn_caps"
-            style="@style/KeyboardKey.Special"
             android:layout_width="@dimen/key_special_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
             android:text="⇧"
-            android:textSize="16sp" />
+            android:textSize="16sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545"
+            android:padding="2dp" />
 
-        <!-- Letters (runtime-populated) -->
         <LinearLayout
             android:id="@+id/row_letters3"
             android:layout_width="0dp"
@@ -104,14 +102,15 @@
             android:layout_weight="1"
             android:orientation="horizontal" />
 
-        <!-- Backspace key -->
-        <com.google.android.material.button.MaterialButton
+        <Button
             android:id="@+id/btn_backspace"
-            style="@style/KeyboardKey.Special"
             android:layout_width="@dimen/key_backspace_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
             android:text="⌫"
-            android:textSize="16sp" />
+            android:textSize="16sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545"
+            android:padding="2dp" />
     </LinearLayout>
 </LinearLayout>
