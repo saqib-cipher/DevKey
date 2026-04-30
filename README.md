@@ -12,14 +12,38 @@ CodeKeys/
 │   └── src/main/
 │       ├── AndroidManifest.xml
 │       ├── java/com/codekeys/ime/
-│       │   ├── CodeKeysIME.java        ← Core IME Service
-│       │   └── SettingsActivity.java   ← Theme/Settings UI
+│       │   ├── CodeKeysIME.java        ← Core IME Service (key preview, shift logic,
+│       │   │                              suggestions, IME actions, language popup)
+│       │   └── SettingsActivity.java   ← Settings UI logic + custom language presets
 │       └── res/
 │           ├── layout/
-│           │   └── keyboard_main.xml   ← Keyboard View
+│           │   ├── keyboard_main.xml   ← Keyboard view
+│           │   └── settings_activity.xml ← Settings screen layout (separate from Java)
+│           ├── values/
+│           │   └── styles.xml          ← AppTheme + SettingsHeader style
 │           └── xml/
 │               └── method.xml          ← IME Metadata
 ```
+
+## ✨ What's new in this build
+
+* **M3 key-preview popup** — every text/symbol key tap shows a Gboard-style
+  popup above the key with the inserted character.
+* **Smart Shift / Caps Lock** — single tap = uppercase next letter, then auto-revert;
+  double tap = caps-lock until tapped again. ⇧ icon = single, ⇪ icon = locked.
+* **Selection-safe** — Shift/Caps, suggestion taps, and snippet inserts no longer
+  collapse the user's selection. Backspace deletes the selection (if any) instead
+  of one character to its left.
+* **Suggestion strip** — top row offers autocomplete (snippet triggers) and basic
+  typo correction.
+* **IME action support** — Enter button shows Go / Next / Done / 🔍 Search / Send
+  based on the active EditText's `imeOptions`.
+* **No more Tab key** — replaced by dedicated **?123** symbol panel and **☺** emoji
+  panel toggles.
+* **Settings + language popup** — the ⚙ button shows a bottom-left popup listing
+  every available language plus a "Settings…" entry that launches the settings app.
+* **Custom language presets** — Settings → "Custom Language Presets" lets the user
+  add/remove preset names; they appear in the keyboard's language popup.
 
 ---
 
