@@ -69,15 +69,26 @@ public class CodeKeysIME extends InputMethodService {
     // ─── State ────────────────────────────────────────────────────────────────
     private int capsState = CAPS_OFF;
     private long lastCapsTapMs = 0L;
+    /** Last backspace tap timestamp — used to detect double-tap-clear. */
+    private long lastBackspaceTapMs = 0L;
 
     private boolean panelSymbols = false;   // ?123 panel showing instead of QWERTY
     private boolean panelEmoji   = false;   // emoji panel
+    private boolean panelClipboard = false; // clipboard history panel
     private String currentLang = "GENERAL";
+
+    /**
+     * Simple counters that drive undo/redo button enable + opacity state. We
+     * cannot inspect the host app's undo stack — these reflect operations we
+     * have ourselves committed (text inserts, deletes, snippet inserts, etc.)
+     * vs. how many of those have been "undone" via the undo button. They get
+     * reset whenever the input field changes (onStartInputView).
+     */
+    private int undoableOps = 0;
+    private int redoableOps = 0;
     private SharedPreferences prefs;
     private Vibrator vibrator;
     private AudioManager audio;
-
-    private final List<String> clipboard = new ArrayList<>();
 
     // Last suggestion list, kept so we can rebuild the strip without re-scanning.
     private List<String> currentSuggestions = new ArrayList<>();
@@ -101,6 +112,8 @@ public class CodeKeysIME extends InputMethodService {
     private LinearLayout rowNumbers, rowLetters1, rowLetters2, rowLetters3;
     private LinearLayout rowSymbols, rowSnippets, rowNav;
     private Button btnCaps, btnEnter, btnSettings, btnSymbolsPanel, btnEmoji, btnSpace;
+    private Button btnUndo, btnRedo;
+    private ImageButton btnArrowLeft, btnArrowRight, btnArrowUp, btnArrowDown;
     /** Modifier buttons inside the PC keys row, kept so we can refresh state. */
     private final HashMap<Integer, Button> modifierButtons = new HashMap<>();
 
@@ -230,14 +243,12 @@ public class CodeKeysIME extends InputMethodService {
         {"Del",    "KEY:112"}   // KEYCODE_FORWARD_DEL
     };
 
-    /** A small curated emoji list — keeps us off the system emoji font path. */
-    private static final String[] EMOJI_SET = {
-        "😀","😄","😅","😂","🤣","😊","😍","😘","😎","🤔",
-        "🙃","🙂","😇","🥲","🥳","😴","😭","😡","🤯","🤖",
-        "👍","👎","👏","🙏","💪","🤝","✌️","👀","💯","🔥",
-        "✅","❌","⭐","✨","🎉","🎯","💡","💻","📱","⌨️",
-        "❤️","💔","💖","💙","💚","💛","💜","🧡","🤍","🖤"
-    };
+    /** Default emoji category shown when the panel opens. */
+    private String emojiCategory = "smileys";
+    /** Active emoji search query (set via on-keyboard letter taps). */
+    private final StringBuilder emojiSearchQuery = new StringBuilder();
+    /** Max number of recently-used emoji we remember. */
+    private static final int MAX_RECENT_EMOJI = 24;
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────
     @Override
@@ -265,6 +276,12 @@ public class CodeKeysIME extends InputMethodService {
         if (capsState == CAPS_SINGLE) capsState = CAPS_OFF;
         panelSymbols = false;
         panelEmoji = false;
+        panelClipboard = false;
+        emojiSearchQuery.setLength(0);
+        // A new input field invalidates our undo counters — host's edit history
+        // is per-field too.
+        undoableOps = 0;
+        redoableOps = 0;
         if (keyboardView != null) {
             // Re-read height + PC-keys settings: the user may have edited them.
             applyKeyboardHeight();
@@ -272,6 +289,8 @@ public class CodeKeysIME extends InputMethodService {
             applyTheme();
             updateEnterButton(info);
             buildKeyboardRows();
+            refreshHistoryButtonsState();
+            refreshArrowButtonsState();
         }
     }
 
@@ -282,6 +301,7 @@ public class CodeKeysIME extends InputMethodService {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd,
                 candidatesStart, candidatesEnd);
         refreshSuggestions();
+        refreshArrowButtonsState();
     }
 
     @Override
@@ -338,6 +358,10 @@ public class CodeKeysIME extends InputMethodService {
 
     // ─── Build Dynamic Rows ───────────────────────────────────────────────────
     private void buildKeyboardRows() {
+        if (panelClipboard) {
+            buildClipboardPanel();
+            return;
+        }
         if (panelEmoji) {
             buildEmojiPanel();
             return;
@@ -395,8 +419,16 @@ public class CodeKeysIME extends InputMethodService {
         });
         btn.setOnClickListener(v -> {
             haptic(v);
+            // While the emoji panel is open, letter / number taps drive the
+            // in-keyboard emoji search instead of typing into the editor.
+            if (panelEmoji) {
+                emojiSearchQuery.append(letter.toLowerCase());
+                buildEmojiPanel();
+                return;
+            }
             String ch = (isLetter && capsState != CAPS_OFF) ? letter.toUpperCase() : letter;
             commitChar(ch);
+            noteOperation();
             // Single-shift consumed.
             if (isLetter && capsState == CAPS_SINGLE) {
                 capsState = CAPS_OFF;
@@ -453,19 +485,17 @@ public class CodeKeysIME extends InputMethodService {
     }
 
     private void buildSnippetRow() {
-        String[][] snippets = LANG_SNIPPETS.containsKey(currentLang)
-                ? LANG_SNIPPETS.get(currentLang)
-                : LANG_SNIPPETS.get("GENERAL");
         rowSnippets.removeAllViews();
-        if (snippets == null) return;
         int accentColor = getAccentColor();
-        for (final String[] snippet : snippets) {
+        for (final String[] snippet : effectiveSnippets()) {
             Button btn = makeKey(snippet[0]);
             btn.setTextSize(11f);
             btn.setTextColor(accentColor);
             btn.setOnClickListener(v -> {
                 haptic(v);
                 replaceSelectionOrInsert(snippet[1]);
+                // Custom snippet inserts count as undo-able operations.
+                noteOperation();
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dpToPx(56), dpToPx(38));
             lp.setMargins(2, 2, 2, 2);
@@ -505,23 +535,80 @@ public class CodeKeysIME extends InputMethodService {
         refreshCapsButtonStyle();
     }
 
-    /** Emoji panel rendered into the snippet/scrollable area. */
+    /**
+     * Emoji panel — categorized + searchable.
+     *
+     * <p>Layout when open:
+     *   <ul>
+     *     <li>Suggestion strip → live emoji search box (showing the current
+     *         {@link #emojiSearchQuery}).</li>
+     *     <li>Symbol row → category tabs (Recent, Smileys, Animals, …).</li>
+     *     <li>Three letter rows + snippet row → emoji grid filtered by the
+     *         active category or current search query.</li>
+     *   </ul>
+     *
+     * <p>While the emoji panel is active, letter / number key taps are routed
+     * into {@link #emojiSearchQuery} (filtering the grid live) instead of
+     * being committed to the editor — see {@link #addLetterKey} and
+     * {@link #deleteCharOrSelection}.
+     */
     private void buildEmojiPanel() {
         rowNumbers.setVisibility(View.GONE);
-        rowSymbols.setVisibility(View.GONE);
+        rowSymbols.setVisibility(View.VISIBLE);
         rowSnippets.setVisibility(View.VISIBLE);
         rowLetters1.removeAllViews();
         rowLetters2.removeAllViews();
         rowLetters3.removeAllViews();
         rowSnippets.removeAllViews();
 
-        // Render emoji into the 3 letter rows, distributed evenly.
-        LinearLayout[] containers = {rowLetters1, rowLetters2, rowLetters3};
-        int perRow = (int) Math.ceil(EMOJI_SET.length / (double) containers.length);
+        // ── Category tabs (rendered into the symbol row) ──────────────────
+        rowSymbols.removeAllViews();
+        int accent = getAccentColor();
+        int textCol = getKeyTextColor();
+        int keyBg = getKeyBgColor();
+        for (int i = 0; i < EmojiData.CATEGORY_KEYS.length; i++) {
+            final String key = EmojiData.CATEGORY_KEYS[i];
+            String label = EmojiData.CATEGORY_NAMES[i];
+            boolean active = key.equals(emojiCategory) && emojiSearchQuery.length() == 0;
+            Button tab = makeKey(label);
+            tab.setTextSize(label.length() > 2 ? 11f : 16f);
+            tab.setTextColor(active ? accent : textCol);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(active ? blend(keyBg, accent, 0.35f) : keyBg);
+            bg.setCornerRadius(dpToPx(10));
+            tab.setBackground(bg);
+            tab.setOnClickListener(v -> {
+                haptic(v);
+                emojiCategory = key;
+                emojiSearchQuery.setLength(0);
+                buildEmojiPanel();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dpToPx(48), dpToPx(40));
+            lp.setMargins(2, 2, 2, 2);
+            tab.setLayoutParams(lp);
+            rowSymbols.addView(tab);
+        }
+
+        // ── Emoji grid ─────────────────────────────────────────────────────
+        List<String> emojis;
+        if (emojiSearchQuery.length() > 0) {
+            emojis = EmojiData.search(emojiSearchQuery.toString());
+        } else if ("recent".equals(emojiCategory)) {
+            emojis = loadRecentEmojis();
+            // Fallback: when no recents yet, show smileys so the panel isn't blank.
+            if (emojis.isEmpty()) emojis = EmojiData.emojisFor("smileys");
+        } else {
+            emojis = EmojiData.emojisFor(emojiCategory);
+        }
+
+        // 4 rows total: rowSnippets + rowLetters1/2/3 → distribute emojis.
+        LinearLayout[] containers = {rowSnippets, rowLetters1, rowLetters2, rowLetters3};
+        int perRow = Math.max(1, (int) Math.ceil(emojis.size() / (double) containers.length));
         int idx = 0;
         for (LinearLayout container : containers) {
-            for (int j = 0; j < perRow && idx < EMOJI_SET.length; j++, idx++) {
-                final String emoji = EMOJI_SET[idx];
+            container.removeAllViews();
+            for (int j = 0; j < perRow && idx < emojis.size(); j++, idx++) {
+                final String emoji = emojis.get(idx);
                 Button btn = makeKey(emoji);
                 btn.setTextSize(20f);
                 btn.setOnTouchListener((v, ev) -> {
@@ -531,14 +618,102 @@ public class CodeKeysIME extends InputMethodService {
                         uiHandler.postDelayed(this::dismissPreview, 90L);
                     return false;
                 });
-                btn.setOnClickListener(v -> { haptic(v); replaceSelectionOrInsert(emoji); });
+                btn.setOnClickListener(v -> {
+                    haptic(v);
+                    replaceSelectionOrInsert(emoji);
+                    noteOperation();
+                    rememberRecentEmoji(emoji);
+                });
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dpToPx(48), 1f);
                 lp.setMargins(2, 2, 2, 2);
                 btn.setLayoutParams(lp);
                 container.addView(btn);
             }
         }
+        // Empty hint when search yields nothing.
+        if (emojis.isEmpty() && emojiSearchQuery.length() > 0) {
+            TextView hint = new TextView(this);
+            hint.setText("No emoji match \"" + emojiSearchQuery + "\"");
+            hint.setTextSize(12f);
+            hint.setTextColor(dim(textCol));
+            hint.setGravity(Gravity.CENTER);
+            rowSnippets.addView(hint);
+        }
         refreshCapsButtonStyle();
+        // Repaint suggestion strip as the search box.
+        refreshEmojiSearchStrip();
+    }
+
+    /**
+     * Repaints {@link #rowSuggestions} as a live emoji-search input box. Reads
+     * the current {@link #emojiSearchQuery} and provides a clear button.
+     */
+    private void refreshEmojiSearchStrip() {
+        if (rowSuggestions == null) return;
+        rowSuggestions.removeAllViews();
+        int textCol = getKeyTextColor();
+        int accent = getAccentColor();
+
+        TextView prompt = new TextView(this);
+        prompt.setText("🔍");
+        prompt.setTextSize(14f);
+        prompt.setPadding(dpToPx(10), 0, dpToPx(6), 0);
+        prompt.setGravity(Gravity.CENTER_VERTICAL);
+        rowSuggestions.addView(prompt);
+
+        TextView query = new TextView(this);
+        if (emojiSearchQuery.length() == 0) {
+            query.setText("Type to search emoji…");
+            query.setTextColor(dim(textCol));
+        } else {
+            query.setText(emojiSearchQuery.toString());
+            query.setTextColor(accent);
+        }
+        query.setTextSize(13f);
+        query.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams qlp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        query.setLayoutParams(qlp);
+        rowSuggestions.addView(query);
+
+        if (emojiSearchQuery.length() > 0) {
+            Button clear = new Button(this);
+            clear.setText("✕");
+            clear.setAllCaps(false);
+            clear.setTextSize(13f);
+            clear.setTextColor(textCol);
+            clear.setBackgroundColor(0x00000000);
+            clear.setOnClickListener(v -> {
+                haptic(v);
+                emojiSearchQuery.setLength(0);
+                buildEmojiPanel();
+            });
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                    dpToPx(40), ViewGroup.LayoutParams.MATCH_PARENT);
+            clear.setLayoutParams(clp);
+            rowSuggestions.addView(clear);
+        }
+    }
+
+    /**
+     * Saves an emoji to the "recents" pref list, MRU-ordered with a hard cap.
+     * Stored under {@code emoji_recents} as a {@code "\u0001"}-delimited list.
+     */
+    private void rememberRecentEmoji(String emoji) {
+        if (TextUtils.isEmpty(emoji)) return;
+        ArrayList<String> existing = new ArrayList<>(loadRecentEmojis());
+        existing.remove(emoji);
+        existing.add(0, emoji);
+        while (existing.size() > MAX_RECENT_EMOJI) existing.remove(existing.size() - 1);
+        prefs.edit().putString("emoji_recents", TextUtils.join("\u0001", existing)).apply();
+    }
+
+    private List<String> loadRecentEmojis() {
+        String raw = prefs.getString("emoji_recents", "");
+        if (TextUtils.isEmpty(raw)) return Collections.emptyList();
+        ArrayList<String> out = new ArrayList<>();
+        for (String s : raw.split("\u0001")) if (!s.isEmpty()) out.add(s);
+        return out;
     }
 
     // ─── Nav Row ──────────────────────────────────────────────────────────────
@@ -547,7 +722,7 @@ public class CodeKeysIME extends InputMethodService {
 
         Button btnBack = keyboardView.findViewById(R.id.btn_backspace);
         if (btnBack != null) {
-            btnBack.setOnClickListener(v -> { haptic(v); deleteCharOrSelection(); });
+            btnBack.setOnClickListener(v -> { haptic(v); onBackspaceTapped(); });
             btnBack.setOnLongClickListener(v -> { deleteWord(); return true; });
         }
 
@@ -555,19 +730,111 @@ public class CodeKeysIME extends InputMethodService {
 
         if (btnEnter != null) btnEnter.setOnClickListener(v -> { haptic(v); performEnterAction(); });
 
-        ImageButton btnLeft  = keyboardView.findViewById(R.id.btn_arrow_left);
-        ImageButton btnRight = keyboardView.findViewById(R.id.btn_arrow_right);
-        ImageButton btnUp    = keyboardView.findViewById(R.id.btn_arrow_up);
-        ImageButton btnDown  = keyboardView.findViewById(R.id.btn_arrow_down);
-        if (btnLeft != null)  btnLeft.setOnClickListener(v -> sendArrow(KeyEvent.KEYCODE_DPAD_LEFT));
-        if (btnRight != null) btnRight.setOnClickListener(v -> sendArrow(KeyEvent.KEYCODE_DPAD_RIGHT));
-        if (btnUp != null)    btnUp.setOnClickListener(v -> sendArrow(KeyEvent.KEYCODE_DPAD_UP));
-        if (btnDown != null)  btnDown.setOnClickListener(v -> sendArrow(KeyEvent.KEYCODE_DPAD_DOWN));
+        btnArrowLeft  = keyboardView.findViewById(R.id.btn_arrow_left);
+        btnArrowRight = keyboardView.findViewById(R.id.btn_arrow_right);
+        btnArrowUp    = keyboardView.findViewById(R.id.btn_arrow_up);
+        btnArrowDown  = keyboardView.findViewById(R.id.btn_arrow_down);
+        if (btnArrowLeft != null)  btnArrowLeft.setOnClickListener(v -> sendArrow(KeyEvent.KEYCODE_DPAD_LEFT));
+        if (btnArrowRight != null) btnArrowRight.setOnClickListener(v -> sendArrow(KeyEvent.KEYCODE_DPAD_RIGHT));
+        if (btnArrowUp != null)    btnArrowUp.setOnClickListener(v -> sendArrow(KeyEvent.KEYCODE_DPAD_UP));
+        if (btnArrowDown != null)  btnArrowDown.setOnClickListener(v -> sendArrow(KeyEvent.KEYCODE_DPAD_DOWN));
 
-        Button btnUndo = keyboardView.findViewById(R.id.btn_undo);
-        Button btnRedo = keyboardView.findViewById(R.id.btn_redo);
-        if (btnUndo != null) btnUndo.setOnClickListener(v -> sendUndoRedo(true));
-        if (btnRedo != null) btnRedo.setOnClickListener(v -> sendUndoRedo(false));
+        btnUndo = keyboardView.findViewById(R.id.btn_undo);
+        btnRedo = keyboardView.findViewById(R.id.btn_redo);
+        if (btnUndo != null) btnUndo.setOnClickListener(v -> { haptic(v); doUndo(); });
+        if (btnRedo != null) btnRedo.setOnClickListener(v -> { haptic(v); doRedo(); });
+        refreshHistoryButtonsState();
+        refreshArrowButtonsState();
+    }
+
+    // ─── Undo / Redo state (counters that drive button opacity) ──────────────
+    /**
+     * Marks that the keyboard has just performed an undo-able operation
+     * (insert, snippet, paste …). Increments {@link #undoableOps} and clears
+     * any pending redo, mirroring how host editors invalidate the redo stack
+     * when the user makes a fresh edit.
+     */
+    private void noteOperation() {
+        undoableOps++;
+        redoableOps = 0;
+        refreshHistoryButtonsState();
+    }
+
+    /**
+     * Marks that we just deleted text. Treated identically to
+     * {@link #noteOperation} for the purpose of enabling the Undo button —
+     * deleting is reversible by Ctrl+Z in most apps.
+     */
+    private void noteDeletion() {
+        noteOperation();
+    }
+
+    /** Drives the actual undo: sends Ctrl+Z and shifts the redo counter. */
+    private void doUndo() {
+        if (undoableOps <= 0) return;
+        sendUndoRedo(true);
+        undoableOps--;
+        redoableOps++;
+        refreshHistoryButtonsState();
+    }
+
+    /** Drives the actual redo: sends Ctrl+Y and shifts the undo counter. */
+    private void doRedo() {
+        if (redoableOps <= 0) return;
+        sendUndoRedo(false);
+        redoableOps--;
+        undoableOps++;
+        refreshHistoryButtonsState();
+    }
+
+    /** Refreshes opacity / enabled state for the Undo/Redo buttons. */
+    private void refreshHistoryButtonsState() {
+        if (btnUndo != null) {
+            boolean active = undoableOps > 0;
+            btnUndo.setEnabled(active);
+            btnUndo.setAlpha(active ? 1f : 0.35f);
+        }
+        if (btnRedo != null) {
+            boolean active = redoableOps > 0;
+            btnRedo.setEnabled(active);
+            btnRedo.setAlpha(active ? 1f : 0.35f);
+        }
+    }
+
+    /**
+     * Refreshes opacity / enabled state for the four arrow buttons so the user
+     * can see at a glance which directions still have travel left.
+     *
+     * <p>Caret position vs. total length is read from the host's extracted
+     * text; left/up dim at start, right/down dim at end. Up/Down can't be
+     * fully introspected (no way to know if there's a previous/next line),
+     * so we dim both whenever the field has no content at all.
+     */
+    private void refreshArrowButtonsState() {
+        if (btnArrowLeft == null) return;
+        InputConnection ic = getCurrentInputConnection();
+        int pos = -1;
+        int total = -1;
+        if (ic != null) {
+            ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
+            if (et != null && et.text != null) {
+                pos = et.selectionStart;
+                total = et.text.length();
+            }
+        }
+        boolean canLeft = pos > 0 || pos < 0;
+        boolean canRight = (pos < 0) || (total < 0) || pos < total;
+        boolean hasText = total > 0;
+        applyEnabled(btnArrowLeft, canLeft);
+        applyEnabled(btnArrowRight, canRight);
+        applyEnabled(btnArrowUp, hasText);
+        applyEnabled(btnArrowDown, hasText);
+    }
+
+    private static void applyEnabled(View v, boolean enabled) {
+        if (v == null) return;
+        v.setEnabled(enabled);
+        v.setAlpha(enabled ? 1f : 0.35f);
     }
 
     // ─── Caps state machine (single-shift / caps-lock) ───────────────────────
@@ -642,14 +909,17 @@ public class CodeKeysIME extends InputMethodService {
     }
 
     /**
-     * Snippet / emoji insertion. Always replaces selection if present, never
-     * collapses it silently — matches the behavior the user requested.
+     * Snippet / emoji / suggestion insertion. Always replaces selection if
+     * present, never collapses it silently — matches the behavior the user
+     * requested. Also tracks the operation in the undo counter so the Undo
+     * button enables.
      */
     private void replaceSelectionOrInsert(String text) {
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) return;
         // commitText replaces the current selection range for us.
         ic.commitText(text, 1);
+        noteOperation();
     }
 
     private void insertSymbolWithAutoClose(String sym) {
@@ -671,6 +941,7 @@ public class CodeKeysIME extends InputMethodService {
             // commitText handles selection replacement automatically.
             ic.commitText(sym, 1);
         }
+        noteOperation();
     }
 
     /**
@@ -689,10 +960,66 @@ public class CodeKeysIME extends InputMethodService {
         }
     }
 
+    /**
+     * Backspace tap dispatcher.
+     *
+     * <ol>
+     *   <li>If the emoji panel's search box has any characters, deletes from
+     *       there instead of touching the editor.</li>
+     *   <li>If this is a double-tap (within {@link #DOUBLE_TAP_MS}), clears
+     *       the entire input field — the behavior the user asked for under
+     *       "double tap on clear btn remove all text".</li>
+     *   <li>Otherwise behaves as a normal single-character backspace.</li>
+     * </ol>
+     */
+    private void onBackspaceTapped() {
+        // Emoji panel: delete one char from the in-keyboard search query.
+        if (panelEmoji && emojiSearchQuery.length() > 0) {
+            emojiSearchQuery.deleteCharAt(emojiSearchQuery.length() - 1);
+            buildEmojiPanel();
+            return;
+        }
+        long now = System.currentTimeMillis();
+        boolean isDoubleTap = (now - lastBackspaceTapMs) <= DOUBLE_TAP_MS;
+        lastBackspaceTapMs = now;
+        if (isDoubleTap) {
+            clearAllText();
+            return;
+        }
+        deleteCharOrSelection();
+        noteDeletion();
+    }
+
+    /**
+     * Removes every character from the current text field (used by the
+     * double-tap-backspace shortcut). Selects the whole field then commits an
+     * empty string — which works across most apps because {@code commitText}
+     * replaces the active selection.
+     */
+    private void clearAllText() {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+        ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
+        if (et == null || et.text == null) {
+            // Fallback: aggressive surround delete (covers most app types).
+            ic.deleteSurroundingText(Integer.MAX_VALUE / 2, Integer.MAX_VALUE / 2);
+            noteDeletion();
+            return;
+        }
+        int len = et.text.length();
+        if (len == 0) return;
+        ic.beginBatchEdit();
+        ic.setSelection(0, len);
+        ic.commitText("", 1);
+        ic.endBatchEdit();
+        noteDeletion();
+        Toast.makeText(this, "Cleared", Toast.LENGTH_SHORT).show();
+    }
+
     private void deleteWord() {
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) return;
-        if (hasSelection(ic)) { ic.commitText("", 1); return; }
+        if (hasSelection(ic)) { ic.commitText("", 1); noteDeletion(); return; }
         CharSequence text = ic.getTextBeforeCursor(50, 0);
         if (TextUtils.isEmpty(text)) return;
         int deleteCount = 0;
@@ -700,6 +1027,7 @@ public class CodeKeysIME extends InputMethodService {
         while (i >= 0 && text.charAt(i) == ' ') { i--; deleteCount++; }
         while (i >= 0 && text.charAt(i) != ' ') { i--; deleteCount++; }
         ic.deleteSurroundingText(deleteCount, 0);
+        noteDeletion();
     }
 
     private void sendArrow(int keyCode) {
@@ -826,11 +1154,16 @@ public class CodeKeysIME extends InputMethodService {
     private void applySuggestion(String suggestion) {
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) return;
-        if (hasSelection(ic)) { ic.commitText(suggestion + " ", 1); return; }
+        if (hasSelection(ic)) {
+            ic.commitText(suggestion + " ", 1);
+            noteOperation();
+            return;
+        }
         CharSequence before = ic.getTextBeforeCursor(64, 0);
         String word = currentWord(before);
         if (!word.isEmpty()) ic.deleteSurroundingText(word.length(), 0);
         ic.commitText(suggestion + " ", 1);
+        noteOperation();
     }
 
     private static String currentWord(CharSequence before) {
@@ -848,34 +1181,99 @@ public class CodeKeysIME extends InputMethodService {
 
     /**
      * Builds an ordered suggestion list for the given prefix. Sources, in order:
-     *   1. Snippet triggers for the current language whose label starts with the
-     *      prefix (autocomplete).
+     *   1. Snippet triggers (built-in + custom) for the current language whose
+     *      label starts with the prefix (autocomplete).
      *   2. Tiny built-in english correction map for common typos.
-     *   3. The literal current word (so the user can lock it in to bypass autocorrect).
+     *   3. Common-English-word dictionary (see {@link CommonWords}) — provides
+     *      the broad day-to-day vocabulary the user asked for.
+     *   4. The literal current word (so the user can lock it in to bypass autocorrect).
+     *
+     * <p>The list is capped at 8 candidates to keep the strip readable while
+     * still showing more than the previous limit of 6.
      */
     private List<String> computeSuggestions(String prefix) {
         if (prefix == null || prefix.isEmpty()) return Collections.emptyList();
         String lower = prefix.toLowerCase();
         ArrayList<String> out = new ArrayList<>();
 
-        String[][] snippets = LANG_SNIPPETS.containsKey(currentLang)
-                ? LANG_SNIPPETS.get(currentLang)
-                : LANG_SNIPPETS.get("GENERAL");
-        if (snippets != null) {
-            for (String[] s : snippets) {
-                if (s[0].startsWith(lower) && !s[0].equals(lower) && !out.contains(s[0])) {
-                    out.add(s[0]);
-                }
+        // 1. Snippet triggers (built-in + user-defined custom snippets).
+        for (String[] s : effectiveSnippets()) {
+            if (s[0].startsWith(lower) && !s[0].equals(lower) && !out.contains(s[0])) {
+                out.add(s[0]);
             }
         }
+
+        // 2. Common-typo autocorrect (single highest-confidence fix).
         String fix = COMMON_TYPOS.get(lower);
         if (fix != null && !out.contains(fix)) out.add(fix);
 
-        // Always include the literal word last as a "lock-in" candidate.
+        // 3. Dictionary prefix-match (sorted by descending frequency in CommonWords).
+        for (String w : CommonWords.all()) {
+            if (out.size() >= 8) break;
+            if (w.length() <= lower.length()) continue; // skip same-length / shorter
+            if (w.startsWith(lower) && !out.contains(w)) {
+                // Preserve casing of the typed prefix when the user is mid-word
+                // and started with an uppercase letter.
+                if (Character.isUpperCase(prefix.charAt(0))) {
+                    out.add(Character.toUpperCase(w.charAt(0)) + w.substring(1));
+                } else {
+                    out.add(w);
+                }
+            }
+        }
+
+        // 4. Always include the literal word last as a "lock-in" candidate.
         if (!out.contains(prefix)) out.add(prefix);
 
-        // Cap at 6 to keep the strip readable.
-        if (out.size() > 6) out.subList(6, out.size()).clear();
+        // Cap at 8 to keep the strip readable.
+        if (out.size() > 8) out.subList(8, out.size()).clear();
+        return out;
+    }
+
+    /**
+     * Returns the union of built-in language snippets and any custom snippets
+     * the user defined for {@link #currentLang} via Settings. Custom snippets
+     * appear first so they override built-ins on tie.
+     */
+    private List<String[]> effectiveSnippets() {
+        ArrayList<String[]> out = new ArrayList<>();
+        // Custom snippets for the active language (if any).
+        for (String[] s : loadCustomSnippets(currentLang)) out.add(s);
+
+        // Built-in snippets for the active language.
+        String[][] builtin = LANG_SNIPPETS.containsKey(currentLang)
+                ? LANG_SNIPPETS.get(currentLang)
+                : LANG_SNIPPETS.get("GENERAL");
+        if (builtin != null) {
+            for (String[] s : builtin) {
+                boolean dup = false;
+                for (String[] e : out) { if (e[0].equals(s[0])) { dup = true; break; } }
+                if (!dup) out.add(s);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Loads user-defined snippets for {@code lang} from SharedPreferences.
+     * Storage format: pref key {@code custom_snip_<LANG>} →
+     * {@code "trigger\u0001expansion\u0002trigger\u0001expansion…"}.
+     * The non-printing separators avoid colliding with snippet contents
+     * (which may legitimately contain {@code |}, {@code =}, newlines).
+     */
+    private List<String[]> loadCustomSnippets(String lang) {
+        ArrayList<String[]> out = new ArrayList<>();
+        if (lang == null) return out;
+        String raw = prefs.getString("custom_snip_" + lang, "");
+        if (TextUtils.isEmpty(raw)) return out;
+        for (String pair : raw.split("\u0002")) {
+            if (pair.isEmpty()) continue;
+            int sep = pair.indexOf('\u0001');
+            if (sep <= 0 || sep >= pair.length() - 1) continue;
+            String trigger = pair.substring(0, sep);
+            String expansion = pair.substring(sep + 1);
+            out.add(new String[]{trigger, expansion});
+        }
         return out;
     }
 
@@ -949,6 +1347,10 @@ public class CodeKeysIME extends InputMethodService {
         div.setLayoutParams(divLp);
         content.addView(div);
 
+        // Clipboard panel toggle
+        content.addView(makePopupRow("📋  Clipboard", getKeyTextColor(), pw,
+                () -> togglePanel(false, false, true)));
+
         content.addView(makePopupRow("⚙  Settings…", getAccentColor(), pw, () -> {
             Intent it = new Intent(this, SettingsActivity.class);
             it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -1005,14 +1407,183 @@ public class CodeKeysIME extends InputMethodService {
 
     // ─── Panels ───────────────────────────────────────────────────────────────
     private void togglePanel(boolean wantSymbols, boolean wantEmoji) {
+        togglePanel(wantSymbols, wantEmoji, false);
+    }
+
+    /**
+     * Three-way panel switcher. Only one of (symbols, emoji, clipboard) can be
+     * active at a time; passing all-false reverts to the QWERTY view.
+     */
+    private void togglePanel(boolean wantSymbols, boolean wantEmoji, boolean wantClipboard) {
         panelSymbols = wantSymbols;
         panelEmoji = wantEmoji;
+        panelClipboard = wantClipboard;
+        if (!wantEmoji) emojiSearchQuery.setLength(0);
         // Reflect button "active" state via background.
         if (btnSymbolsPanel != null)
             btnSymbolsPanel.setBackgroundColor(wantSymbols ? getAccentColor() : getKeyBgColor());
         if (btnEmoji != null)
             btnEmoji.setBackgroundColor(wantEmoji ? getAccentColor() : getKeyBgColor());
         buildKeyboardRows();
+    }
+
+    /**
+     * Clipboard panel — lists pinned + recent clipboard entries with tap-to-paste,
+     * pin / unpin (📌), and delete (✕) actions. Rendered into the suggestion
+     * strip + symbol/snippet/letter rows so we use the same vertical real
+     * estate as the other panels.
+     */
+    private void buildClipboardPanel() {
+        rowNumbers.setVisibility(View.GONE);
+        rowSymbols.setVisibility(View.VISIBLE);
+        rowSnippets.setVisibility(View.VISIBLE);
+        rowLetters1.removeAllViews();
+        rowLetters2.removeAllViews();
+        rowLetters3.removeAllViews();
+        rowSymbols.removeAllViews();
+        rowSnippets.removeAllViews();
+
+        int textCol = getKeyTextColor();
+        int accent = getAccentColor();
+        int keyBg = getKeyBgColor();
+
+        // Header strip: "Clipboard" label + "Copy selection" + "Clear all" actions
+        TextView header = new TextView(this);
+        header.setText("Clipboard");
+        header.setTextSize(13f);
+        header.setTextColor(textCol);
+        header.setTypeface(Typeface.DEFAULT_BOLD);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dpToPx(10), 0, dpToPx(10), 0);
+        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        header.setLayoutParams(hlp);
+        rowSymbols.addView(header);
+
+        Button btnCopySel = new Button(this);
+        btnCopySel.setText("⧉ Copy");
+        btnCopySel.setAllCaps(false);
+        btnCopySel.setTextSize(11f);
+        btnCopySel.setTextColor(accent);
+        btnCopySel.setBackgroundColor(blend(keyBg, accent, 0.20f));
+        LinearLayout.LayoutParams cslp = new LinearLayout.LayoutParams(
+                dpToPx(72), dpToPx(36));
+        cslp.setMargins(2, 4, 2, 4);
+        btnCopySel.setLayoutParams(cslp);
+        btnCopySel.setOnClickListener(v -> {
+            haptic(v);
+            captureSelectionToClipboard();
+            buildClipboardPanel();
+        });
+        rowSymbols.addView(btnCopySel);
+
+        Button btnClear = new Button(this);
+        btnClear.setText("✕ Clear");
+        btnClear.setAllCaps(false);
+        btnClear.setTextSize(11f);
+        btnClear.setTextColor(0xFFFF6666);
+        btnClear.setBackgroundColor(0x22FF0000);
+        LinearLayout.LayoutParams cclp = new LinearLayout.LayoutParams(
+                dpToPx(72), dpToPx(36));
+        cclp.setMargins(2, 4, 2, 4);
+        btnClear.setLayoutParams(cclp);
+        btnClear.setOnClickListener(v -> {
+            haptic(v);
+            clearUnpinnedClipboard();
+            buildClipboardPanel();
+        });
+        rowSymbols.addView(btnClear);
+
+        // List entries — pinned first, then recents.
+        List<ClipEntry> entries = loadClipboard();
+        LinearLayout[] rows = {rowSnippets, rowLetters1, rowLetters2, rowLetters3};
+        int rowIdx = 0;
+        if (entries.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("No copied items yet. Long-press a symbol or use ⧉ Copy on a selection.");
+            empty.setTextSize(12f);
+            empty.setTextColor(dim(textCol));
+            empty.setGravity(Gravity.CENTER_VERTICAL);
+            empty.setPadding(dpToPx(12), 0, dpToPx(12), 0);
+            rowSnippets.addView(empty);
+        }
+        for (final ClipEntry e : entries) {
+            if (rowIdx >= rows.length) break;
+            LinearLayout container = rows[rowIdx++];
+            container.removeAllViews();
+
+            // Tap area → paste
+            Button paste = new Button(this);
+            String preview = e.text.replace("\n", " ");
+            if (preview.length() > 60) preview = preview.substring(0, 60) + "…";
+            paste.setText((e.pinned ? "📌  " : "") + preview);
+            paste.setAllCaps(false);
+            paste.setTextSize(13f);
+            paste.setTextColor(textCol);
+            paste.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            paste.setPadding(dpToPx(12), 0, dpToPx(12), 0);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(blend(keyBg, accent, e.pinned ? 0.18f : 0.05f));
+            bg.setCornerRadius(dpToPx(8));
+            paste.setBackground(bg);
+            LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+            plp.setMargins(2, 2, 2, 2);
+            paste.setLayoutParams(plp);
+            paste.setOnClickListener(v -> {
+                haptic(v);
+                replaceSelectionOrInsert(e.text);
+            });
+            container.addView(paste);
+
+            // Pin toggle
+            Button pin = new Button(this);
+            pin.setText(e.pinned ? "📌" : "📍");
+            pin.setAllCaps(false);
+            pin.setTextSize(14f);
+            pin.setBackgroundColor(blend(keyBg, accent, 0.10f));
+            LinearLayout.LayoutParams pinLp = new LinearLayout.LayoutParams(
+                    dpToPx(40), ViewGroup.LayoutParams.MATCH_PARENT);
+            pinLp.setMargins(2, 2, 2, 2);
+            pin.setLayoutParams(pinLp);
+            pin.setOnClickListener(v -> {
+                haptic(v);
+                togglePinned(e.text);
+                buildClipboardPanel();
+            });
+            container.addView(pin);
+
+            // Delete
+            Button del = new Button(this);
+            del.setText("✕");
+            del.setAllCaps(false);
+            del.setTextSize(14f);
+            del.setTextColor(0xFFFF6666);
+            del.setBackgroundColor(0x22FF0000);
+            LinearLayout.LayoutParams dLp = new LinearLayout.LayoutParams(
+                    dpToPx(40), ViewGroup.LayoutParams.MATCH_PARENT);
+            dLp.setMargins(2, 2, 2, 2);
+            del.setLayoutParams(dLp);
+            del.setOnClickListener(v -> {
+                haptic(v);
+                deleteFromClipboard(e.text);
+                buildClipboardPanel();
+            });
+            container.addView(del);
+        }
+
+        // Suggestion strip → instructions / "back to keyboard" hint.
+        if (rowSuggestions != null) {
+            rowSuggestions.removeAllViews();
+            TextView hint = new TextView(this);
+            hint.setText("Tap an item to paste · 📍 to pin · ✕ to delete");
+            hint.setTextSize(11f);
+            hint.setTextColor(dim(textCol));
+            hint.setGravity(Gravity.CENTER_VERTICAL);
+            hint.setPadding(dpToPx(10), 0, dpToPx(10), 0);
+            rowSuggestions.addView(hint);
+        }
+        refreshCapsButtonStyle();
     }
 
     // ─── Key Preview Popup (M3-expressive) ────────────────────────────────────
@@ -1056,12 +1627,149 @@ public class CodeKeysIME extends InputMethodService {
         }
     }
 
-    // ─── Clipboard ────────────────────────────────────────────────────────────
+    // ─── Clipboard history (pinned + recent, persisted) ──────────────────────
+    /** Single in-keyboard clipboard entry. */
+    private static final class ClipEntry {
+        final String text;
+        final boolean pinned;
+        ClipEntry(String text, boolean pinned) { this.text = text; this.pinned = pinned; }
+    }
+
+    /** Maximum number of unpinned (recent) entries kept in history. */
+    private static final int MAX_CLIPBOARD = 20;
+
+    /**
+     * Adds {@code text} to the clipboard history. Existing entries are
+     * de-duplicated; pinned status survives reinsert. Persisted to prefs.
+     */
     private void addToClipboard(String text) {
-        if (!clipboard.contains(text)) {
-            clipboard.add(0, text);
-            if (clipboard.size() > 10) clipboard.remove(clipboard.size() - 1);
+        if (TextUtils.isEmpty(text)) return;
+        ArrayList<ClipEntry> entries = new ArrayList<>(loadClipboard());
+        boolean wasPinned = false;
+        for (int i = 0; i < entries.size(); i++) {
+            if (entries.get(i).text.equals(text)) {
+                wasPinned = entries.get(i).pinned;
+                entries.remove(i);
+                break;
+            }
         }
+        // Insert at the top of the unpinned region (right after the last pinned).
+        int insertAt = 0;
+        for (ClipEntry e : entries) { if (e.pinned) insertAt++; else break; }
+        entries.add(insertAt, new ClipEntry(text, wasPinned));
+        // Trim unpinned region.
+        int unpinned = 0;
+        for (int i = entries.size() - 1; i >= 0; i--) {
+            if (!entries.get(i).pinned) {
+                unpinned++;
+                if (unpinned > MAX_CLIPBOARD) entries.remove(i);
+            }
+        }
+        saveClipboard(entries);
+    }
+
+    /** Toggles the pinned flag for the entry whose text equals {@code text}. */
+    private void togglePinned(String text) {
+        ArrayList<ClipEntry> entries = new ArrayList<>(loadClipboard());
+        for (int i = 0; i < entries.size(); i++) {
+            if (entries.get(i).text.equals(text)) {
+                ClipEntry old = entries.remove(i);
+                ClipEntry updated = new ClipEntry(old.text, !old.pinned);
+                // Reinsert: pinned items first, recent items after.
+                int insertAt = 0;
+                for (ClipEntry e : entries) {
+                    if (e.pinned == updated.pinned) {
+                        if (updated.pinned) insertAt++;
+                        else break;
+                    } else if (updated.pinned) {
+                        // pinned go first; stop counting once we hit unpinned
+                        break;
+                    } else {
+                        insertAt++;
+                    }
+                }
+                entries.add(insertAt, updated);
+                break;
+            }
+        }
+        saveClipboard(entries);
+    }
+
+    private void deleteFromClipboard(String text) {
+        ArrayList<ClipEntry> entries = new ArrayList<>(loadClipboard());
+        for (int i = 0; i < entries.size(); i++) {
+            if (entries.get(i).text.equals(text)) { entries.remove(i); break; }
+        }
+        saveClipboard(entries);
+    }
+
+    /** Removes every unpinned entry. Pinned items survive. */
+    private void clearUnpinnedClipboard() {
+        ArrayList<ClipEntry> entries = new ArrayList<>(loadClipboard());
+        ArrayList<ClipEntry> kept = new ArrayList<>();
+        for (ClipEntry e : entries) if (e.pinned) kept.add(e);
+        saveClipboard(kept);
+    }
+
+    /**
+     * Pulls the user's current selection (if any) into the clipboard history.
+     * If nothing is selected, falls back to the word before the caret.
+     */
+    private void captureSelectionToClipboard() {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+        ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
+        if (et == null || et.text == null) return;
+        String text;
+        if (et.selectionStart != et.selectionEnd) {
+            int s = Math.min(et.selectionStart, et.selectionEnd);
+            int e = Math.max(et.selectionStart, et.selectionEnd);
+            if (s < 0 || e > et.text.length()) return;
+            text = et.text.subSequence(s, e).toString();
+        } else {
+            CharSequence before = ic.getTextBeforeCursor(64, 0);
+            text = currentWord(before);
+        }
+        if (TextUtils.isEmpty(text)) {
+            Toast.makeText(this, "Nothing to copy.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        addToClipboard(text);
+        Toast.makeText(this, "Copied to clipboard history", Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * Reads the clipboard list from SharedPreferences.
+     *
+     * <p>Storage format: one record per entry, separated by {@code "\u0002"}.
+     * Each record is {@code "P\u0001<text>"} for pinned or
+     * {@code "U\u0001<text>"} for unpinned. The non-printing separators dodge
+     * collisions with arbitrary copied content (which may contain newlines,
+     * pipes, or any printable character).
+     */
+    private List<ClipEntry> loadClipboard() {
+        String raw = prefs.getString("clipboard_history", "");
+        if (TextUtils.isEmpty(raw)) return Collections.emptyList();
+        ArrayList<ClipEntry> out = new ArrayList<>();
+        for (String rec : raw.split("\u0002")) {
+            if (rec.isEmpty()) continue;
+            int sep = rec.indexOf('\u0001');
+            if (sep <= 0) continue;
+            String tag = rec.substring(0, sep);
+            String text = rec.substring(sep + 1);
+            out.add(new ClipEntry(text, "P".equals(tag)));
+        }
+        return out;
+    }
+
+    private void saveClipboard(List<ClipEntry> entries) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < entries.size(); i++) {
+            if (i > 0) sb.append('\u0002');
+            ClipEntry e = entries.get(i);
+            sb.append(e.pinned ? 'P' : 'U').append('\u0001').append(e.text);
+        }
+        prefs.edit().putString("clipboard_history", sb.toString()).apply();
     }
 
     // ─── Theme ────────────────────────────────────────────────────────────────
