@@ -1,1 +1,254 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    keyboard_main.xml
+    Place in: app/src/main/res/layout/keyboard_main.xml
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/keyboard_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp"
+    android:background="#1A1A2E">
 
+    <!-- ══════════════════════════════════════════════════════
+         ROW 0 ─ Numbers (1–0)
+    ══════════════════════════════════════════════════════ -->
+    <LinearLayout
+        android:id="@+id/row_numbers"
+        android:layout_width="match_parent"
+        android:layout_height="42dp"
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp" />
+
+    <!-- ══════════════════════════════════════════════════════
+         ROW 1 ─ QWERTY top row
+    ══════════════════════════════════════════════════════ -->
+    <LinearLayout
+        android:id="@+id/row_letters1"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp" />
+
+    <!-- ══════════════════════════════════════════════════════
+         ROW 2 ─ ASDFG row
+    ══════════════════════════════════════════════════════ -->
+    <LinearLayout
+        android:id="@+id/row_letters2"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp" />
+
+    <!-- ══════════════════════════════════════════════════════
+         ROW 3 ─ ZXCVB row + Caps + Backspace
+    ══════════════════════════════════════════════════════ -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <Button
+            android:id="@+id/btn_caps"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:text="⇧"
+            android:textSize="16sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545"
+            android:padding="2dp" />
+
+        <LinearLayout
+            android:id="@+id/row_letters3"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="horizontal" />
+
+        <Button
+            android:id="@+id/btn_backspace"
+            android:layout_width="52dp"
+            android:layout_height="44dp"
+            android:text="⌫"
+            android:textSize="16sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545"
+            android:padding="2dp" />
+    </LinearLayout>
+
+    <!-- ══════════════════════════════════════════════════════
+         ROW 4 ─ Symbol toolbar (scrollable)
+    ══════════════════════════════════════════════════════ -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:scrollbars="none"
+        android:background="#141428">
+
+        <LinearLayout
+            android:id="@+id/row_symbols"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
+    </HorizontalScrollView>
+
+    <!-- ══════════════════════════════════════════════════════
+         ROW 5 ─ Snippet shortcuts (scrollable)
+    ══════════════════════════════════════════════════════ -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="42dp"
+        android:scrollbars="none"
+        android:background="#0D0D1F">
+
+        <LinearLayout
+            android:id="@+id/row_snippets"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
+    </HorizontalScrollView>
+
+    <!-- ══════════════════════════════════════════════════════
+         ROW 6 ─ Bottom action row
+    ══════════════════════════════════════════════════════ -->
+    <LinearLayout
+        android:id="@+id/row_nav"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:gravity="center_vertical">
+
+        <!-- Lang switcher -->
+        <TextView
+            android:id="@+id/lang_label"
+            android:layout_width="52dp"
+            android:layout_height="40dp"
+            android:text="GEN"
+            android:textSize="10sp"
+            android:textColor="#00E5FF"
+            android:gravity="center"
+            android:background="#252545" />
+
+        <!-- Tab -->
+        <Button
+            android:id="@+id/btn_tab"
+            android:layout_width="48dp"
+            android:layout_height="40dp"
+            android:text="TAB"
+            android:textSize="10sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545"
+            android:layout_marginStart="2dp" />
+
+        <!-- Undo -->
+        <Button
+            android:id="@+id/btn_undo"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:text="↩"
+            android:textSize="14sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545"
+            android:layout_marginStart="2dp" />
+
+        <!-- Redo -->
+        <Button
+            android:id="@+id/btn_redo"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:text="↪"
+            android:textSize="14sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545"
+            android:layout_marginStart="2dp" />
+
+        <!-- Space -->
+        <Button
+            android:id="@+id/btn_space"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:text="SPACE"
+            android:textSize="12sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="2dp" />
+
+        <!-- Arrow cluster -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:orientation="vertical">
+
+            <ImageButton
+                android:id="@+id/btn_arrow_up"
+                android:layout_width="36dp"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:src="@android:drawable/arrow_up_float"
+                android:background="#252545"
+                android:scaleType="fitCenter" />
+
+            <ImageButton
+                android:id="@+id/btn_arrow_down"
+                android:layout_width="36dp"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:src="@android:drawable/arrow_down_float"
+                android:background="#252545"
+                android:scaleType="fitCenter" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:orientation="vertical"
+            android:layout_marginStart="1dp">
+
+            <ImageButton
+                android:id="@+id/btn_arrow_left"
+                android:layout_width="36dp"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:src="@android:drawable/ic_media_rew"
+                android:background="#252545"
+                android:scaleType="fitCenter" />
+
+            <ImageButton
+                android:id="@+id/btn_arrow_right"
+                android:layout_width="36dp"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:src="@android:drawable/ic_media_ff"
+                android:background="#252545"
+                android:scaleType="fitCenter" />
+        </LinearLayout>
+
+        <!-- Enter -->
+        <Button
+            android:id="@+id/btn_enter"
+            android:layout_width="52dp"
+            android:layout_height="40dp"
+            android:text="↵"
+            android:textSize="16sp"
+            android:textColor="#00E5FF"
+            android:background="#252545"
+            android:layout_marginStart="2dp" />
+    </LinearLayout>
+
+</LinearLayout>
