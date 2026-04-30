@@ -44,7 +44,8 @@
                 android:background="#00E5FF" />
 
             <LinearLayout
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
+                android:layout_weight="1"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
@@ -65,6 +66,69 @@
                     android:textSize="12sp"
                     android:textColor="#9494B5" />
             </LinearLayout>
+
+            <!-- Info / help button (top-right) -->
+            <Button
+                android:id="@+id/btn_info"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:text="?"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textAllCaps="false"
+                android:textColor="#00E5FF"
+                android:background="#252545" />
+        </LinearLayout>
+
+        <!-- ══════════════════════════════════════════════════════
+             TRY IT (preview field — type with the keyboard)
+        ══════════════════════════════════════════════════════ -->
+        <TextView
+            android:id="@+id/header_preview"
+            style="@style/SettingsHeader"
+            android:text="TRY IT" />
+
+        <LinearLayout
+            android:id="@+id/preview_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="14dp"
+            android:background="#202036">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Tap below to test CodeKeys without leaving Settings."
+                android:textSize="11sp"
+                android:textColor="#9494B5"
+                android:paddingBottom="10dp" />
+
+            <EditText
+                android:id="@+id/edit_preview"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Try typing here…"
+                android:textColor="#E8E8FF"
+                android:textColorHint="#6A6A85"
+                android:background="#181826"
+                android:padding="12dp"
+                android:textSize="14sp"
+                android:minLines="3"
+                android:gravity="top|start"
+                android:inputType="textMultiLine|textCapSentences" />
+
+            <Button
+                android:id="@+id/btn_clear_preview"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_gravity="end"
+                android:text="Clear"
+                android:textAllCaps="false"
+                android:textSize="11sp"
+                android:textColor="#9494B5"
+                android:background="#181826" />
         </LinearLayout>
 
         <!-- ══════════════════════════════════════════════════════
@@ -231,6 +295,61 @@
             android:orientation="vertical"
             android:padding="14dp"
             android:background="#1F1F33" />
+
+        <!-- ══════════════════════════════════════════════════════
+             BACKUP / RESTORE  (JSON import / export)
+        ══════════════════════════════════════════════════════ -->
+        <TextView
+            android:id="@+id/header_backup"
+            style="@style/SettingsHeader"
+            android:text="BACKUP &amp; RESTORE" />
+
+        <LinearLayout
+            android:id="@+id/backup_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="14dp"
+            android:background="#202036">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Export your themes, language snippets, and settings as JSON, then paste it back later or on another device."
+                android:textSize="11sp"
+                android:textColor="#9494B5"
+                android:paddingBottom="10dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btn_export"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="44dp"
+                    android:layout_marginEnd="4dp"
+                    android:text="⇪ Export"
+                    android:textAllCaps="false"
+                    android:textSize="13sp"
+                    android:textColor="#00E5FF"
+                    android:background="#2D2D55" />
+
+                <Button
+                    android:id="@+id/btn_import"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="4dp"
+                    android:text="⇩ Import"
+                    android:textAllCaps="false"
+                    android:textSize="13sp"
+                    android:textColor="#E8E8FF"
+                    android:background="#252545" />
+            </LinearLayout>
+        </LinearLayout>
 
         <!-- ══════════════════════════════════════════════════════
              RESET

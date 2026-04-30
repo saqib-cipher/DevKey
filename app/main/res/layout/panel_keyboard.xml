@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    panel_keyboard.xml — default QWERTY panel.
+    Used by both the KEYBOARD and SYMBOLS panel modes (the latter just refills
+    the letter rows with symbol glyphs at runtime).
+
+    NOTE: All colors here are baseline fallbacks. The IME does NOT depend on
+    Material theme — Java applies the user's accent / key colors at runtime.
+    Row LinearLayouts are populated at runtime by `UIRenderer.makeKey(...)`.
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Symbol toolbar (scrollable, runtime-filled) -->
+    <HorizontalScrollView
+        android:id="@+id/symbol_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/row_symbol_height"
+        android:scrollbars="none"
+        android:background="#141428">
+
+        <LinearLayout
+            android:id="@+id/row_symbols"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
+    </HorizontalScrollView>
+
+    <!-- Snippet shortcuts (scrollable, runtime-filled) -->
+    <HorizontalScrollView
+        android:id="@+id/snippet_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/row_snippet_height"
+        android:scrollbars="none"
+        android:background="#0D0D1F">
+
+        <LinearLayout
+            android:id="@+id/row_snippets"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
+    </HorizontalScrollView>
+
+    <!-- Numbers (1–0) -->
+    <LinearLayout
+        android:id="@+id/row_numbers"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/row_number_height"
+        android:orientation="horizontal"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp" />
+
+    <!-- QWERTY top row -->
+    <LinearLayout
+        android:id="@+id/row_letters1"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/row_letter_height"
+        android:orientation="horizontal"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp" />
+
+    <!-- ASDFG row -->
+    <LinearLayout
+        android:id="@+id/row_letters2"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/row_letter_height"
+        android:orientation="horizontal"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp" />
+
+    <!-- Bottom letter row + caps + backspace -->
+    <LinearLayout
+        android:id="@+id/row_letters3_wrap"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/row_letter_height"
+        android:orientation="horizontal"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp">
+
+        <Button
+            android:id="@+id/btn_caps"
+            android:layout_width="@dimen/key_special_width"
+            android:layout_height="match_parent"
+            android:layout_margin="@dimen/key_margin"
+            android:text="⇧"
+            android:textSize="16sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545"
+            android:padding="2dp" />
+
+        <LinearLayout
+            android:id="@+id/row_letters3"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="horizontal" />
+
+        <Button
+            android:id="@+id/btn_backspace"
+            android:layout_width="@dimen/key_backspace_width"
+            android:layout_height="match_parent"
+            android:layout_margin="@dimen/key_margin"
+            android:text="⌫"
+            android:textSize="16sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545"
+            android:padding="2dp" />
+    </LinearLayout>
+</LinearLayout>

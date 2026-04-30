@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    dimens.xml
+    ──────────────────────────────────────────────────────────────────────────
+    Centralised spacing and sizing tokens for the keyboard.
+
+    Anything that's used across multiple layouts lives here so the look stays
+    consistent. The Java side scales rows by `key_height_scale` at runtime,
+    so values here are the *baseline* heights at scale = 1.0.
+    ──────────────────────────────────────────────────────────────────────────
+-->
+<resources>
+
+    <!-- Keyboard root padding — keep small so the keyboard isn't bottom-heavy. -->
+    <dimen name="keyboard_root_padding_top">4dp</dimen>
+    <dimen name="keyboard_root_padding_bottom">6dp</dimen>
+    <dimen name="keyboard_elevation">3dp</dimen>
+
+    <!-- Row heights (baseline — scaled at runtime) -->
+    <dimen name="row_suggestion_height">42dp</dimen>
+    <dimen name="row_pc_keys_height">38dp</dimen>
+    <dimen name="row_symbol_height">44dp</dimen>
+    <dimen name="row_snippet_height">40dp</dimen>
+    <dimen name="row_number_height">42dp</dimen>
+    <dimen name="row_letter_height">48dp</dimen>
+    <dimen name="row_nav_height">48dp</dimen>
+
+    <!-- Key sizing & spacing -->
+    <dimen name="key_corner_radius">14dp</dimen>
+    <dimen name="key_padding_h">6dp</dimen>
+    <dimen name="key_padding_v">4dp</dimen>
+    <dimen name="key_margin">2dp</dimen>
+    <dimen name="key_letter_text_size">16sp</dimen>
+
+    <!-- Special keys (caps / backspace / nav row) -->
+    <dimen name="key_special_width">46dp</dimen>
+    <dimen name="key_backspace_width">56dp</dimen>
+    <dimen name="key_action_width">44dp</dimen>
+    <dimen name="key_undo_width">38dp</dimen>
+    <dimen name="key_arrow_width">32dp</dimen>
+    <dimen name="key_enter_width">58dp</dimen>
+
+    <!-- Chips -->
+    <dimen name="chip_corner_radius">18dp</dimen>
+    <dimen name="chip_height">32dp</dimen>
+
+    <!-- Card surfaces (clipboard) -->
+    <dimen name="card_corner_radius">16dp</dimen>
+    <dimen name="card_padding">10dp</dimen>
+    <dimen name="card_margin">4dp</dimen>
+
+    <!-- Emoji panel -->
+    <dimen name="emoji_search_height">48dp</dimen>
+    <dimen name="emoji_tab_height">42dp</dimen>
+    <dimen name="emoji_tab_width">54dp</dimen>
+    <dimen name="emoji_grid_height">220dp</dimen>
+    <dimen name="emoji_cell_height">44dp</dimen>
+
+    <!-- Clipboard panel -->
+    <dimen name="clipboard_header_height">42dp</dimen>
+    <dimen name="clipboard_list_height">220dp</dimen>
+
+</resources>

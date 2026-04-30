@@ -36,5 +36,8 @@ android {
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    // No RecyclerView, no Fragments — Sketchware-compatible
+    // No Material Components — the IME inflates under
+    // Theme.DeviceDefault.InputMethod, which doesn't expose Material attrs,
+    // so all keyboard visuals are produced programmatically (see UIRenderer).
+    // No RecyclerView, no Fragments — Sketchware-compatible.
 }

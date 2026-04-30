@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    panel_emoji.xml — emoji panel.
+    Gboard-style layout:
+      • Top: scrollable category tabs.
+      • Middle: 8-column emoji grid.
+      • Bottom: pill-shaped search bar (icon + live query) with a clear/back
+        key on the bottom-right that occupies the same slot as the keyboard's
+        backspace key, so the layout footprint matches the keyboard panel.
+
+    Typing into the search query is driven by the IME's input engine
+    (letters tapped on the keyboard append to the query, keyboard backspace
+    pops the last char) — this layout has NO focusable EditText.
+
+    NOTE: No Material theme dependencies — IME applies colors programmatically.
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Category tabs (horizontal, scrollable) -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/emoji_tab_height"
+        android:scrollbars="none"
+        android:background="#0D0D1F">
+
+        <LinearLayout
+            android:id="@+id/emoji_category_tabs"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:gravity="center_vertical" />
+    </HorizontalScrollView>
+
+    <!-- 8-column emoji grid (rows of 8, runtime-filled) -->
+    <ScrollView
+        android:id="@+id/emoji_grid_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/emoji_grid_height"
+        android:scrollbars="none"
+        android:fillViewport="true"
+        android:background="#1A1A2E">
+
+        <LinearLayout
+            android:id="@+id/emoji_grid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp" />
+    </ScrollView>
+
+    <!-- Bottom search bar — pill container on the left, clear key on the
+         right. The clear key occupies the same slot as the keyboard
+         backspace so panel switches don't shift the keyboard's footprint. -->
+    <LinearLayout
+        android:id="@+id/emoji_search_bar"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/emoji_search_height"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#141428"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp">
+
+        <!-- Pill-shaped search container (runtime-styled background) -->
+        <LinearLayout
+            android:id="@+id/emoji_search_pill"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/key_margin"
+            android:layout_marginEnd="@dimen/key_margin"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="6dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="14dp"
+            android:paddingEnd="10dp">
+
+            <TextView
+                android:id="@+id/emoji_search_icon"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🔍"
+                android:textSize="14sp"
+                android:paddingEnd="10dp" />
+
+            <TextView
+                android:id="@+id/emoji_search_text"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="15sp"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:textColor="#9DA0BF"
+                android:text="Search" />
+        </LinearLayout>
+
+        <!-- Clear (✕ / ⌫) key — styled & sized like the keyboard backspace
+             so the bottom-right slot is identical between the keyboard and
+             emoji panels. Visuals applied programmatically. -->
+        <Button
+            android:id="@+id/emoji_search_clear"
+            android:layout_width="@dimen/key_backspace_width"
+            android:layout_height="match_parent"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="6dp"
+            android:layout_marginStart="@dimen/key_margin"
+            android:layout_marginEnd="@dimen/key_margin"
+            android:text="⌫"
+            android:textSize="16sp"
+            android:textAllCaps="false"
+            android:textColor="#E8E8FF"
+            android:background="#252545"
+            android:padding="0dp" />
+    </LinearLayout>
+</LinearLayout>
