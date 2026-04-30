@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.inputmethodservice.InputMethodService;
+import android.media.AudioManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -23,6 +24,7 @@ import android.view.inputmethod.ExtractedText;
 import android.view.inputmethod.ExtractedTextRequest;
 import android.view.inputmethod.InputConnection;
 import android.widget.Button;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
@@ -73,6 +75,7 @@ public class CodeKeysIME extends InputMethodService {
     private String currentLang = "GENERAL";
     private SharedPreferences prefs;
     private Vibrator vibrator;
+    private AudioManager audio;
 
     private final List<String> clipboard = new ArrayList<>();
 
@@ -83,12 +86,23 @@ public class CodeKeysIME extends InputMethodService {
     private PopupWindow activePreview;
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
 
+    /**
+     * Sticky modifier mask combining KeyEvent.META_CTRL_ON / META_ALT_ON /
+     * META_SHIFT_ON / META_META_ON. Cleared after a non-modifier key press
+     * (matching the standard "sticky keys" behaviour).
+     */
+    private int activeMetaState = 0;
+
     // Views
     private View keyboardView;
     private LinearLayout rowSuggestions;
+    private LinearLayout rowPcKeys;
+    private HorizontalScrollView pcKeysScroll;
     private LinearLayout rowNumbers, rowLetters1, rowLetters2, rowLetters3;
     private LinearLayout rowSymbols, rowSnippets, rowNav;
     private Button btnCaps, btnEnter, btnSettings, btnSymbolsPanel, btnEmoji, btnSpace;
+    /** Modifier buttons inside the PC keys row, kept so we can refresh state. */
+    private final HashMap<Integer, Button> modifierButtons = new HashMap<>();
 
     // ─── Languages ────────────────────────────────────────────────────────────
     /**
@@ -177,6 +191,45 @@ public class CodeKeysIME extends InputMethodService {
         {"*","\"","'",":",";","!","?","<",">","="}
     };
 
+    /**
+     * PC keyboard row contents.
+     *
+     * <p>Each entry is one of:
+     *   <ul>
+     *     <li>{@code "MOD:CTRL"}, {@code "MOD:ALT"}, {@code "MOD:SHIFT"},
+     *         {@code "MOD:META"} — sticky modifier; toggles the corresponding
+     *         {@link KeyEvent#META_CTRL_ON} bit in {@link #activeMetaState}.</li>
+     *     <li>{@code "KEY:<KEYCODE>"} — fires that hardware keycode through
+     *         {@link InputConnection#sendKeyEvent} with the active meta mask.</li>
+     *   </ul>
+     */
+    private static final String[][] PC_KEYS = {
+        {"Esc",    "KEY:111"},  // KEYCODE_ESCAPE
+        {"Tab",    "KEY:61"},   // KEYCODE_TAB
+        {"Ctrl",   "MOD:CTRL"},
+        {"Alt",    "MOD:ALT"},
+        {"Shift",  "MOD:SHIFT"},
+        {"Win",    "MOD:META"},
+        {"F1",     "KEY:131"},
+        {"F2",     "KEY:132"},
+        {"F3",     "KEY:133"},
+        {"F4",     "KEY:134"},
+        {"F5",     "KEY:135"},
+        {"F6",     "KEY:136"},
+        {"F7",     "KEY:137"},
+        {"F8",     "KEY:138"},
+        {"F9",     "KEY:139"},
+        {"F10",    "KEY:140"},
+        {"F11",    "KEY:141"},
+        {"F12",    "KEY:142"},
+        {"Home",   "KEY:122"},
+        {"End",    "KEY:123"},
+        {"PgUp",   "KEY:92"},   // KEYCODE_PAGE_UP
+        {"PgDn",   "KEY:93"},   // KEYCODE_PAGE_DOWN
+        {"Ins",    "KEY:124"},  // KEYCODE_INSERT
+        {"Del",    "KEY:112"}   // KEYCODE_FORWARD_DEL
+    };
+
     /** A small curated emoji list — keeps us off the system emoji font path. */
     private static final String[] EMOJI_SET = {
         "😀","😄","😅","😂","🤣","😊","😍","😘","😎","🤔",
@@ -192,6 +245,7 @@ public class CodeKeysIME extends InputMethodService {
         super.onCreate();
         prefs = getSharedPreferences("codekeys_prefs", MODE_PRIVATE);
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+        audio    = (AudioManager) getSystemService(AUDIO_SERVICE);
         currentLang = prefs.getString("lang", "GENERAL");
     }
 
@@ -212,6 +266,10 @@ public class CodeKeysIME extends InputMethodService {
         panelSymbols = false;
         panelEmoji = false;
         if (keyboardView != null) {
+            // Re-read height + PC-keys settings: the user may have edited them.
+            applyKeyboardHeight();
+            buildPcKeysRow();
+            applyTheme();
             updateEnterButton(info);
             buildKeyboardRows();
         }
@@ -235,6 +293,8 @@ public class CodeKeysIME extends InputMethodService {
     // ─── View Init ────────────────────────────────────────────────────────────
     private void initViews() {
         rowSuggestions = keyboardView.findViewById(R.id.row_suggestions);
+        rowPcKeys      = keyboardView.findViewById(R.id.row_pc_keys);
+        pcKeysScroll   = keyboardView.findViewById(R.id.pc_keys_scroll);
         rowNumbers   = keyboardView.findViewById(R.id.row_numbers);
         rowLetters1  = keyboardView.findViewById(R.id.row_letters1);
         rowLetters2  = keyboardView.findViewById(R.id.row_letters2);
@@ -251,6 +311,8 @@ public class CodeKeysIME extends InputMethodService {
         btnSpace        = keyboardView.findViewById(R.id.btn_space);
 
         setupNavButtons();
+        applyKeyboardHeight();
+        buildPcKeysRow();
         updateEnterButton(getCurrentInputEditorInfo());
 
         // Single ⚙ button: tap → language + settings popup, anchored bottom-left.
@@ -562,7 +624,21 @@ public class CodeKeysIME extends InputMethodService {
      */
     private void commitChar(String text) {
         InputConnection ic = getCurrentInputConnection();
-        if (ic != null) ic.commitText(text, 1);
+        if (ic == null) return;
+        // Modifier-aware dispatch: if the user has Ctrl/Alt/Win sticky-engaged,
+        // emit a hardware key event so combos like Ctrl+C work in editors.
+        if (activeMetaState != 0
+                && (activeMetaState & ~KeyEvent.META_SHIFT_ON) != 0
+                && text != null && text.length() == 1) {
+            int kc = charToKeyCode(text);
+            if (kc != 0) {
+                sendKeyWithMeta(kc);
+                clearTransientModifiers();
+                return;
+            }
+        }
+        ic.commitText(text, 1);
+        if (activeMetaState != 0) clearTransientModifiers();
     }
 
     /**
@@ -997,6 +1073,193 @@ public class CodeKeysIME extends InputMethodService {
         keyboardView.setBackgroundColor(bgColor);
     }
 
+    /**
+     * Returns the user's keyboard-height multiplier.
+     *
+     * <p>Stored as one of {@code "compact"} / {@code "standard"} /
+     * {@code "comfortable"} / {@code "large"} (preset names) or as a raw float
+     * under {@code "key_height_scale"} when the user picks a custom value.
+     */
+    private float getHeightScale() {
+        // Direct float pref takes priority if set.
+        float raw = prefs.getFloat("key_height_scale", 1.0f);
+        // Clamp to a sensible band.
+        if (raw < 0.7f) raw = 0.7f;
+        if (raw > 1.6f) raw = 1.6f;
+        return raw;
+    }
+
+    /**
+     * Resizes every row whose height is meaningful for the keyboard height.
+     * The XML still owns the relative proportions; this method just scales
+     * each row's {@code layoutParams.height} by {@link #getHeightScale()}.
+     */
+    private void applyKeyboardHeight() {
+        float scale = getHeightScale();
+        // Each entry: (view, base height in dp). Widths and other params are
+        // untouched.
+        Object[][] rows = {
+            { rowSuggestions != null ? (View) rowSuggestions.getParent() : null, 40 },
+            { pcKeysScroll, 38 },
+            { rowNumbers,   42 },
+            { rowLetters1,  48 },
+            { rowLetters2,  48 },
+            // Row 3 is wrapped by a parent LinearLayout that owns the height —
+            // we resize that parent so caps/backspace/letters all scale together.
+            { rowLetters3 != null ? (View) rowLetters3.getParent() : null, 48 },
+            { rowSymbols != null ? (View) rowSymbols.getParent() : null, 46 },
+            { rowSnippets != null ? (View) rowSnippets.getParent() : null, 42 },
+            { rowNav,       48 },
+        };
+        for (Object[] entry : rows) {
+            View v = (View) entry[0];
+            int baseDp = (Integer) entry[1];
+            if (v == null) continue;
+            ViewGroup.LayoutParams lp = v.getLayoutParams();
+            if (lp == null) continue;
+            lp.height = Math.round(dpToPx(baseDp) * scale);
+            v.setLayoutParams(lp);
+        }
+    }
+
+    // ─── PC keys row (Esc/Tab/Ctrl/Alt/Shift/Win/F1–F12/Home/End/…) ──────────
+    /**
+     * Populates {@link #rowPcKeys}. Visibility honors the
+     * {@code show_pc_keys} pref; letting the user toggle this row from
+     * Settings without rebuilding the keyboard view.
+     */
+    private void buildPcKeysRow() {
+        if (rowPcKeys == null) return;
+        modifierButtons.clear();
+        rowPcKeys.removeAllViews();
+
+        boolean show = prefs.getBoolean("show_pc_keys", false);
+        if (pcKeysScroll != null) {
+            pcKeysScroll.setVisibility(show ? View.VISIBLE : View.GONE);
+        }
+        if (!show) return;
+
+        for (final String[] entry : PC_KEYS) {
+            final String label = entry[0];
+            final String spec  = entry[1];
+            Button btn = makeKey(label);
+            btn.setTextSize(11f);
+            int width = label.length() <= 2 ? dpToPx(38) : dpToPx(46);
+            LinearLayout.LayoutParams lp =
+                    new LinearLayout.LayoutParams(width, LinearLayout.LayoutParams.MATCH_PARENT);
+            lp.setMargins(2, 4, 2, 4);
+            btn.setLayoutParams(lp);
+
+            if (spec.startsWith("MOD:")) {
+                final int metaBit = parseModifierBit(spec.substring(4));
+                modifierButtons.put(metaBit, btn);
+                btn.setOnClickListener(v -> {
+                    haptic(v);
+                    toggleModifier(metaBit);
+                });
+            } else if (spec.startsWith("KEY:")) {
+                final int keyCode = Integer.parseInt(spec.substring(4));
+                btn.setOnClickListener(v -> {
+                    haptic(v);
+                    sendKeyWithMeta(keyCode);
+                    clearTransientModifiers();
+                });
+            }
+            rowPcKeys.addView(btn);
+        }
+        refreshModifierButtonStyles();
+    }
+
+    private static int parseModifierBit(String name) {
+        switch (name) {
+            case "CTRL":  return KeyEvent.META_CTRL_ON;
+            case "ALT":   return KeyEvent.META_ALT_ON;
+            case "SHIFT": return KeyEvent.META_SHIFT_ON;
+            case "META":  return KeyEvent.META_META_ON;
+            default:      return 0;
+        }
+    }
+
+    /**
+     * Toggles a modifier bit in the active meta state and refreshes the visual
+     * feedback for each modifier button.
+     */
+    private void toggleModifier(int metaBit) {
+        if (metaBit == 0) return;
+        activeMetaState ^= metaBit;
+        refreshModifierButtonStyles();
+    }
+
+    /**
+     * Clears non-locked sticky modifiers (Ctrl/Alt/Shift/Win) — called after a
+     * regular key has consumed them, mirroring desktop sticky-keys behaviour.
+     */
+    private void clearTransientModifiers() {
+        if (activeMetaState == 0) return;
+        activeMetaState = 0;
+        refreshModifierButtonStyles();
+    }
+
+    private void refreshModifierButtonStyles() {
+        int accent = getAccentColor();
+        int keyBg  = getKeyBgColor();
+        int textCol = getKeyTextColor();
+        for (Map.Entry<Integer, Button> e : modifierButtons.entrySet()) {
+            boolean on = (activeMetaState & e.getKey()) != 0;
+            Button b = e.getValue();
+            // Reapply rounded background with appropriate fill.
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(on ? accent : keyBg);
+            bg.setCornerRadius(dpToPx(10));
+            b.setBackground(bg);
+            b.setTextColor(on ? 0xFF000000 : textCol);
+        }
+    }
+
+    /**
+     * Sends a hardware-style key press with the active meta-state applied, then
+     * leaves clearing of transient modifiers to the caller.
+     */
+    private void sendKeyWithMeta(int keyCode) {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+        long t = System.currentTimeMillis();
+        ic.sendKeyEvent(new KeyEvent(t, t, KeyEvent.ACTION_DOWN,
+                keyCode, 0, activeMetaState));
+        ic.sendKeyEvent(new KeyEvent(t, t, KeyEvent.ACTION_UP,
+                keyCode, 0, activeMetaState));
+    }
+
+    /**
+     * Maps a single character to its hardware keycode where applicable. Used
+     * when a modifier (Ctrl/Alt/Win) is active so that combos like Ctrl+C are
+     * dispatched as real key events instead of plain text.
+     */
+    private static int charToKeyCode(String ch) {
+        if (ch == null || ch.length() != 1) return 0;
+        char c = ch.charAt(0);
+        if (c >= 'a' && c <= 'z') return KeyEvent.KEYCODE_A + (c - 'a');
+        if (c >= 'A' && c <= 'Z') return KeyEvent.KEYCODE_A + (c - 'A');
+        if (c >= '0' && c <= '9') return KeyEvent.KEYCODE_0 + (c - '0');
+        switch (c) {
+            case ' ':  return KeyEvent.KEYCODE_SPACE;
+            case '\n': return KeyEvent.KEYCODE_ENTER;
+            case '\t': return KeyEvent.KEYCODE_TAB;
+            case '.':  return KeyEvent.KEYCODE_PERIOD;
+            case ',':  return KeyEvent.KEYCODE_COMMA;
+            case '/':  return KeyEvent.KEYCODE_SLASH;
+            case '\\': return KeyEvent.KEYCODE_BACKSLASH;
+            case ';':  return KeyEvent.KEYCODE_SEMICOLON;
+            case '\'': return KeyEvent.KEYCODE_APOSTROPHE;
+            case '[':  return KeyEvent.KEYCODE_LEFT_BRACKET;
+            case ']':  return KeyEvent.KEYCODE_RIGHT_BRACKET;
+            case '-':  return KeyEvent.KEYCODE_MINUS;
+            case '=':  return KeyEvent.KEYCODE_EQUALS;
+            case '`':  return KeyEvent.KEYCODE_GRAVE;
+            default:   return 0;
+        }
+    }
+
     private int getKeyBgColor() {
         boolean dark = prefs.getBoolean("dark", true);
         return prefs.getInt("key_color", dark ? 0xFF252545 : 0xFFFFFFFF);
@@ -1027,14 +1290,44 @@ public class CodeKeysIME extends InputMethodService {
         return btn;
     }
 
-    // ─── Haptic ───────────────────────────────────────────────────────────────
+    // ─── Haptic / sound ───────────────────────────────────────────────────────
     private void haptic(View v) {
-        if (!prefs.getBoolean("haptic", true)) return;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (vibrator != null)
-                vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE));
-        } else {
-            v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+        if (prefs.getBoolean("haptic", true)) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (vibrator != null)
+                    vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE));
+            } else {
+                v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            }
+        }
+        playKeySound(v);
+    }
+
+    /**
+     * Plays a system key-click sound via {@link AudioManager#playSoundEffect}.
+     * Gated by the {@code key_sound} preference (off by default).
+     *
+     * <p>The volume is configurable through {@code key_sound_volume} (0–100,
+     * default 50). When 0, no sound is played even if the toggle is on.
+     */
+    private void playKeySound(View v) {
+        if (!prefs.getBoolean("key_sound", false)) return;
+        if (audio == null) return;
+        int volPct = prefs.getInt("key_sound_volume", 50);
+        if (volPct <= 0) return;
+        float vol = Math.min(1f, Math.max(0f, volPct / 100f));
+        int effect = AudioManager.FX_KEYPRESS_STANDARD;
+        if (v != null) {
+            int id = v.getId();
+            if (id == R.id.btn_backspace) effect = AudioManager.FX_KEYPRESS_DELETE;
+            else if (id == R.id.btn_enter) effect = AudioManager.FX_KEYPRESS_RETURN;
+            else if (id == R.id.btn_space) effect = AudioManager.FX_KEYPRESS_SPACEBAR;
+        }
+        try {
+            audio.playSoundEffect(effect, vol);
+        } catch (Exception ignored) {
+            // Some devices reject custom volumes; fall back to default volume.
+            try { audio.playSoundEffect(effect); } catch (Exception ignored2) {}
         }
     }
 

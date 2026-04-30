@@ -177,6 +177,132 @@ public class SettingsActivity extends AppCompatActivity {
         preferencesContainer.addView(buildToggle("Show Suggestions",
                 "Display autocomplete and correction strip on top",
                 "show_suggestions", true, textCol, bg, accent));
+
+        preferencesContainer.addView(buildToggle("Key Sound",
+                "Play system click sound on each key press",
+                "key_sound", false, textCol, bg, accent));
+
+        preferencesContainer.addView(buildToggle("Show PC Keys Row",
+                "Adds Esc, Tab, Ctrl, Alt, Shift, Win, F1–F12, Home/End/PgUp/PgDn",
+                "show_pc_keys", false, textCol, bg, accent));
+
+        preferencesContainer.addView(buildKeyboardHeightSelector(textCol, bg, accent));
+        preferencesContainer.addView(buildKeySoundVolumeSelector(textCol, bg, accent));
+    }
+
+    /**
+     * Inline "Keyboard Size" selector — four preset buttons writing a float
+     * {@code key_height_scale} preference consumed by the IME service.
+     */
+    private View buildKeyboardHeightSelector(int textCol, int bg, int accent) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
+        card.setPadding(dp(16), dp(12), dp(16), dp(14));
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        clp.setMargins(0, dp(2), 0, dp(2));
+        card.setLayoutParams(clp);
+
+        TextView label = new TextView(this);
+        label.setText("Keyboard Size");
+        label.setTextSize(15f);
+        label.setTextColor(textCol);
+        card.addView(label);
+
+        TextView desc = new TextView(this);
+        desc.setText("Scale the keyboard's row heights — useful on large or small screens.");
+        desc.setTextSize(11f);
+        desc.setTextColor(dim(textCol));
+        desc.setPadding(0, 0, 0, dp(8));
+        card.addView(desc);
+
+        final String[] names    = { "Compact", "Standard", "Comfortable", "Large" };
+        final float[]  scales   = { 0.85f,     1.0f,       1.15f,         1.30f  };
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        float current = prefs.getFloat("key_height_scale", 1.0f);
+        for (int i = 0; i < names.length; i++) {
+            final float scale = scales[i];
+            boolean sel = Math.abs(current - scale) < 0.01f;
+            Button b = new Button(this);
+            b.setText(names[i]);
+            b.setAllCaps(false);
+            b.setTextSize(12f);
+            b.setTextColor(sel ? accent : textCol);
+            b.setBackgroundColor(sel ? blend(bg, accent, 0.22f) : blend(bg, 0xFFFFFFFF, 0.05f));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            lp.setMargins(2, 0, 2, 0);
+            b.setLayoutParams(lp);
+            b.setOnClickListener(v -> {
+                prefs.edit().putFloat("key_height_scale", scale).apply();
+                renderPreferences();
+            });
+            row.addView(b);
+        }
+        card.addView(row);
+        return card;
+    }
+
+    /**
+     * Coarse 5-step volume selector for key-press sounds. Stored as an int
+     * percent {@code key_sound_volume} (0–100). Hidden visually when sound is
+     * off — but still rendered so the user can pre-set their preferred level.
+     */
+    private View buildKeySoundVolumeSelector(int textCol, int bg, int accent) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
+        card.setPadding(dp(16), dp(12), dp(16), dp(14));
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        clp.setMargins(0, dp(2), 0, dp(2));
+        card.setLayoutParams(clp);
+
+        TextView label = new TextView(this);
+        label.setText("Key Sound Volume");
+        label.setTextSize(15f);
+        label.setTextColor(textCol);
+        card.addView(label);
+
+        TextView desc = new TextView(this);
+        desc.setText("Loudness of the click. Has no effect when Key Sound is off.");
+        desc.setTextSize(11f);
+        desc.setTextColor(dim(textCol));
+        desc.setPadding(0, 0, 0, dp(8));
+        card.addView(desc);
+
+        final String[] names = { "Off", "Low", "Med", "High", "Max" };
+        final int[]    vols  = { 0,     25,    50,    75,     100  };
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+
+        int current = prefs.getInt("key_sound_volume", 50);
+        for (int i = 0; i < names.length; i++) {
+            final int vol = vols[i];
+            boolean sel = current == vol;
+            Button b = new Button(this);
+            b.setText(names[i]);
+            b.setAllCaps(false);
+            b.setTextSize(12f);
+            b.setTextColor(sel ? accent : textCol);
+            b.setBackgroundColor(sel ? blend(bg, accent, 0.22f) : blend(bg, 0xFFFFFFFF, 0.05f));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            lp.setMargins(2, 0, 2, 0);
+            b.setLayoutParams(lp);
+            b.setOnClickListener(v -> {
+                prefs.edit().putInt("key_sound_volume", vol).apply();
+                renderPreferences();
+            });
+            row.addView(b);
+        }
+        card.addView(row);
+        return card;
     }
 
     private View buildToggle(String label, String desc, final String key, boolean def,

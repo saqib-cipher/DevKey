@@ -40,6 +40,29 @@
     </HorizontalScrollView>
 
     <!-- ══════════════════════════════════════════════════════
+         ROW −0.5 ─ PC keys: Esc Tab Ctrl Alt Shift Win F1–F12 …
+                    Toggleable from settings ("show_pc_keys").
+                    Hidden by default.
+    ══════════════════════════════════════════════════════ -->
+    <HorizontalScrollView
+        android:id="@+id/pc_keys_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:scrollbars="none"
+        android:background="#0F0F22"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/row_pc_keys"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
+    </HorizontalScrollView>
+
+    <!-- ══════════════════════════════════════════════════════
          ROW 0 ─ Numbers (1–0)
     ══════════════════════════════════════════════════════ -->
     <LinearLayout
