@@ -41,6 +41,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -108,10 +109,6 @@ public class CodeKeysIME extends InputMethodService {
      * the user taps any chip or when the keyboard rebinds to a fresh editor.
      */
     private final List<String> pendingClipChips = new ArrayList<>();
-    private ClipboardManager systemClipboard;
-    private ClipboardManager.OnPrimaryClipChangedListener clipListener;
-    /** Tracks the last clip text we saw to dedupe duplicate change events. */
-    private String lastSeenClipText = null;
 
     // Patterns used to break a clip into sub-chips (URL / number / email).
     private static final Pattern URL_PATTERN =
@@ -318,6 +315,48 @@ public class CodeKeysIME extends InputMethodService {
         }
         clipboardListener = null;
         systemClipboard = null;
+    }
+
+    /**
+     * Loads optional overrides from {@code /assets} so users can ship custom
+     * snippets and symbol sets without rebuilding the app. Hardcoded defaults
+     * (the static initializers above) serve as fallback for any language not
+     * present in the JSON; partial overrides are merged in-place.
+     */
+    private void loadAssetOverrides() {
+        try {
+            Map<String, List<String[]>> assetSnips = AssetDefaults.loadSnippets(this);
+            if (assetSnips != null) {
+                for (Map.Entry<String, List<String[]>> e : assetSnips.entrySet()) {
+                    List<String[]> rows = e.getValue();
+                    if (rows == null || rows.isEmpty()) continue;
+                    String[][] arr = new String[rows.size()][];
+                    for (int i = 0; i < rows.size(); i++) arr[i] = rows.get(i);
+                    LANG_SNIPPETS.put(e.getKey(), arr);
+                }
+            }
+        } catch (Exception ignored) {}
+        try {
+            Map<String, String[]> assetSyms = AssetDefaults.loadLangSymbols(this);
+            if (assetSyms != null) {
+                for (Map.Entry<String, String[]> e : assetSyms.entrySet()) {
+                    if (e.getValue() != null && e.getValue().length > 0) {
+                        LANG_SYMBOLS.put(e.getKey(), e.getValue());
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /**
+     * Hides the entire suggestion strip (header bar) when the user has turned
+     * off "Show Suggestions" in settings. Setting visibility to GONE collapses
+     * the layout space rather than just hiding the chips.
+     */
+    private void applySuggestionVisibility() {
+        if (suggestionScroll == null) return;
+        boolean show = prefs.getBoolean("show_suggestions", true);
+        suggestionScroll.setVisibility(show ? View.VISIBLE : View.GONE);
     }
 
     @Override
@@ -620,11 +659,13 @@ public class CodeKeysIME extends InputMethodService {
         }
         buildSnippetRow();
         // Caps doesn't apply to symbols — repurpose that slot as a glyph
-        // insert ("•") so we don't waste a key. refreshCapsButtonStyle() is
-        // not called here so the new label sticks.
+        // insert ("•") so we don't waste a key. The button is an ImageButton,
+        // so we tint the existing arrow icon to the accent color to indicate
+        // its repurposed state; refreshCapsButtonStyle() is not called here
+        // so the styling sticks until the panel switches back.
         if (btnCaps != null) {
-            btnCaps.setText("•");
-            btnCaps.setTextColor(getAccentColor());
+            btnCaps.setImageResource(R.drawable.arrow_big_up);
+            btnCaps.setColorFilter(getAccentColor());
             btnCaps.setBackground(ui.roundedFill(getKeyBgColor(), dp(10)));
             btnCaps.setOnClickListener(v -> { haptic(v); insertSymbolWithAutoClose("•"); });
         }
@@ -979,18 +1020,18 @@ public class CodeKeysIME extends InputMethodService {
         int strokeC = getKeyStrokeColor();
         switch (capsState) {
             case CAPS_OFF:
-                btnCaps.setText("⇧");
-                btnCaps.setTextColor(getKeyTextColor());
+                btnCaps.setImageResource(R.drawable.arrow_big_up);
+                btnCaps.setColorFilter(getKeyTextColor());
                 btnCaps.setBackground(ui.roundedFill(keyBg, radius, strokeW, strokeC));
                 break;
             case CAPS_SINGLE:
-                btnCaps.setText("⇧");
-                btnCaps.setTextColor(accent);
+                btnCaps.setImageResource(R.drawable.arrow_big_up);
+                btnCaps.setColorFilter(accent);
                 btnCaps.setBackground(ui.roundedFill(blend(keyBg, accent, 0.35f), radius, strokeW, strokeC));
                 break;
             case CAPS_LOCKED:
-                btnCaps.setText("⇪");
-                btnCaps.setTextColor(0xFF000000);
+                btnCaps.setImageResource(R.drawable.capslock);
+                btnCaps.setColorFilter(0xFF000000);
                 btnCaps.setBackground(ui.roundedFill(accent, radius, strokeW, strokeC));
                 break;
         }
@@ -1565,12 +1606,34 @@ public class CodeKeysIME extends InputMethodService {
         }
     }
 
-    /** Applies the unified rounded fill + text styling to a Button. */
-    private void styleActionButton(Button b, int bg, int textCol,
+    /** Applies the unified rounded fill + text styling to an action button.
+     *  Accepts either Button (text) or ImageButton (icon) and routes the
+     *  foreground colour to setTextColor / setColorFilter accordingly. */
+    private void styleActionButton(View b, int bg, int textCol,
                                    int radius, int strokeW, int strokeC) {
         if (b == null) return;
         b.setBackground(ui.roundedFill(bg, radius, strokeW, strokeC));
-        b.setTextColor(textCol);
+        if (b instanceof Button) {
+            ((Button) b).setTextColor(textCol);
+        } else if (b instanceof ImageButton) {
+            ((ImageButton) b).setColorFilter(textCol);
+        }
+    }
+
+    /** Renders the enter key with the corner_down_left icon tinted to {@code tintColor}. */
+    private void applyEnterIcon(int tintColor) {
+        if (btnEnter == null) return;
+        android.graphics.drawable.Drawable d =
+                getResources().getDrawable(R.drawable.corner_down_left);
+        if (d == null) return;
+        d = d.mutate();
+        d.setColorFilter(tintColor, android.graphics.PorterDuff.Mode.SRC_IN);
+        int sz = dp(20);
+        d.setBounds(0, 0, sz, sz);
+        btnEnter.setCompoundDrawables(d, null, null, null);
+        btnEnter.setCompoundDrawablesRelative(null, null, null, null);
+        btnEnter.setText("");
+        btnEnter.setGravity(Gravity.CENTER);
     }
 
     private void styleArrowButton(ImageButton b, int bg,
