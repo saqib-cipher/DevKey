@@ -11,8 +11,9 @@ android {
     buildToolsVersion "34.0.0"
 
     defaultConfig {
+        namespace "com.codekeys.ime"
         applicationId "com.codekeys.ime"
-        minSdkVersion 21          // Android 5.0+ support
+        minSdkVersion 24          // Android 5.0+ support
         targetSdkVersion 34
         versionCode 1
         versionName "1.0.0"
