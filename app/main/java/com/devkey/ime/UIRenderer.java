@@ -3,11 +3,15 @@ package com.codekeys.ime;
 import android.content.Context;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ScrollView;
 import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -138,7 +142,7 @@ final class UIRenderer {
                         Runnable onBackspaceSearch, Runnable onClearSearch) {
         // ── Bottom search bar (pill + key-styled clear) ──
         TextView searchText = panelView.findViewById(R.id.emoji_search_text);
-        Button clearBtn = panelView.findViewById(R.id.emoji_search_clear);
+        ImageButton clearBtn = panelView.findViewById(R.id.emoji_search_clear);
         LinearLayout pill = panelView.findViewById(R.id.emoji_search_pill);
 
         // Pill: rounded surface a touch lighter than the panel background so
@@ -162,10 +166,10 @@ final class UIRenderer {
 
         if (clearBtn != null) {
             // Always-visible backspace-style key. Tap deletes the last search
-            // character (so it actually behaves like a backspace, matching the
-            // "⌫" glyph); long-press wipes the whole query.
-            clearBtn.setText("⌫");
-            clearBtn.setTextColor(engine.isSearching() ? accent : textCol);
+            // character (so it actually behaves like a backspace); long-press
+            // wipes the whole query. Icon is tinted to match the active theme.
+            clearBtn.setImageResource(R.drawable.backspace);
+            clearBtn.setColorFilter(engine.isSearching() ? accent : textCol);
             clearBtn.setBackground(roundedFill(keyBg, ime.dp(12)));
             clearBtn.setOnClickListener(v -> onBackspaceSearch.run());
             clearBtn.setOnLongClickListener(v -> { onClearSearch.run(); return true; });
@@ -197,6 +201,41 @@ final class UIRenderer {
         // ── 8-column grid ──
         LinearLayout grid = panelView.findViewById(R.id.emoji_grid);
         grid.removeAllViews();
+
+        // Swipe horizontally on the grid to jump to the previous / next
+        // category (Gboard parity). Vertical scrolling stays delegated to
+        // the host ScrollView since we only consume horizontal flings.
+        ScrollView gridScroll = panelView.findViewById(R.id.emoji_grid_scroll);
+        if (gridScroll != null && !engine.isSearching()) {
+            final GestureDetector swipe = new GestureDetector(ime,
+                    new GestureDetector.SimpleOnGestureListener() {
+                        @Override
+                        public boolean onFling(MotionEvent e1, MotionEvent e2,
+                                               float vx, float vy) {
+                            if (e1 == null || e2 == null) return false;
+                            float dx = e2.getX() - e1.getX();
+                            float dy = e2.getY() - e1.getY();
+                            if (Math.abs(dx) < ime.dp(48)) return false;
+                            if (Math.abs(dx) < Math.abs(dy) * 1.5f) return false;
+                            int idx = -1;
+                            for (int i = 0; i < EmojiData.CATEGORY_KEYS.length; i++) {
+                                if (EmojiData.CATEGORY_KEYS[i].equals(engine.getCategory())) {
+                                    idx = i; break;
+                                }
+                            }
+                            if (idx < 0) return false;
+                            int next = dx < 0 ? idx + 1 : idx - 1;
+                            if (next < 0 || next >= EmojiData.CATEGORY_KEYS.length) return false;
+                            onCategory.onCategory(EmojiData.CATEGORY_KEYS[next]);
+                            return true;
+                        }
+                    });
+            gridScroll.setOnTouchListener((v, ev) -> swipe.onTouchEvent(ev));
+        } else if (gridScroll != null) {
+            // Searching: clear any prior listener so vertical scroll still works.
+            gridScroll.setOnTouchListener(null);
+        }
+
         List<String> emojis = engine.visibleEmojis();
         if (emojis.isEmpty()) {
             TextView hint = new TextView(ime);

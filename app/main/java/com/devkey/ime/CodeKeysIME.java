@@ -297,8 +297,21 @@ public class CodeKeysIME extends InputMethodService {
                 if (clip == null || clip.getItemCount() == 0) return;
                 CharSequence text = clip.getItemAt(0).coerceToText(this);
                 if (TextUtils.isEmpty(text)) return;
-                clipboardStore.add(text.toString());
+                String s = text.toString();
+                clipboardStore.add(s);
+                // Surface the fresh clip (and any obvious sub-chunks: URLs,
+                // emails, numbers) on the suggestion strip so the user can
+                // paste with one tap without opening the clipboard panel.
+                addPendingClipChip(s);
+                java.util.regex.Matcher m;
+                m = URL_PATTERN.matcher(s);
+                while (m.find()) addPendingClipChip(m.group());
+                m = EMAIL_PATTERN.matcher(s);
+                while (m.find()) addPendingClipChip(m.group());
+                m = NUMBER_PATTERN.matcher(s);
+                while (m.find()) addPendingClipChip(m.group().trim());
                 if (panelMode == PanelMode.CLIPBOARD) refreshClipboardPanel();
+                refreshSuggestions();
             } catch (Exception ignored) {
                 // Some apps mark clips as sensitive — reading throws. Skip.
             }
@@ -306,6 +319,22 @@ public class CodeKeysIME extends InputMethodService {
         try {
             systemClipboard.addPrimaryClipChangedListener(clipboardListener);
         } catch (Exception ignored) {}
+    }
+
+    /**
+     * Adds {@code s} to {@link #pendingClipChips} if it's a non-trivial,
+     * non-duplicate string. Caps the list at 6 entries so the suggestion
+     * strip doesn't push regular candidates off-screen.
+     */
+    private void addPendingClipChip(String s) {
+        if (TextUtils.isEmpty(s)) return;
+        s = s.trim();
+        if (s.length() < 2 || s.length() > 200) return;
+        if (pendingClipChips.contains(s)) return;
+        pendingClipChips.add(0, s);
+        while (pendingClipChips.size() > 6) {
+            pendingClipChips.remove(pendingClipChips.size() - 1);
+        }
     }
 
     private void unregisterSystemClipboardListener() {
@@ -1067,7 +1096,7 @@ public class CodeKeysIME extends InputMethodService {
             @Override
             public void run() {
                 if (swiping[0]) return; // swipe path takes over
-                if (!inputEngine.deleteOne()) {
+                if (!performBackspaceDelete()) {
                     startTime[0] = 0;
                     return;
                 }
@@ -1081,16 +1110,16 @@ public class CodeKeysIME extends InputMethodService {
             int action = ev.getAction();
             if (action == MotionEvent.ACTION_DOWN) {
                 haptic(v);
-                // The main-keyboard backspace ALWAYS targets the host
-                // EditText. Removing characters from the emoji search query
-                // is exclusively the job of `emoji_search_clear` on the
-                // emoji panel, so panel state doesn't affect this gesture.
+                // The main-keyboard backspace doubles as the emoji-search
+                // backspace while the emoji panel is open: routing here keeps
+                // the panel layout free of a redundant clear key and matches
+                // the way letter taps already feed the search query.
                 startTime[0] = System.currentTimeMillis();
                 downX[0] = ev.getX();
                 wordsDeletedDuringSwipe[0] = 0;
                 swiping[0] = false;
                 // Initial single-character delete fires immediately on tap.
-                if (inputEngine.deleteOne()) noteDeletion();
+                if (performBackspaceDelete()) noteDeletion();
                 // Schedule the accelerating loop after a short pause so single
                 // taps don't start the repeat behaviour.
                 uiHandler.postDelayed(loop[0], 320);
@@ -1102,7 +1131,7 @@ public class CodeKeysIME extends InputMethodService {
                     uiHandler.removeCallbacks(loop[0]);
                     int wantDeletions = (int) (-dx / swipeUnitPx);
                     while (wordsDeletedDuringSwipe[0] < wantDeletions) {
-                        if (!inputEngine.deleteWord()) break;
+                        if (!performBackspaceDeleteWord()) break;
                         wordsDeletedDuringSwipe[0]++;
                         noteDeletion();
                     }
@@ -1117,6 +1146,34 @@ public class CodeKeysIME extends InputMethodService {
             }
             return false;
         });
+    }
+
+    /**
+     * Backspace dispatcher: routes a single delete to whichever target the
+     * active panel claims. Emoji panel pops the search query (or, once empty,
+     * defers to the host EditText so the user is never stuck); everything
+     * else deletes from the host EditText directly.
+     *
+     * @return true if a delete actually occurred (so the caller can ramp the
+     *         hold-to-delete cadence).
+     */
+    private boolean performBackspaceDelete() {
+        if (panelMode == PanelMode.EMOJI && emojiEngine.isSearching()) {
+            emojiEngine.popSearchChar();
+            refreshEmojiPanel();
+            return true;
+        }
+        return inputEngine.deleteOne();
+    }
+
+    /** Word-level analogue of {@link #performBackspaceDelete} for swipe-left. */
+    private boolean performBackspaceDeleteWord() {
+        if (panelMode == PanelMode.EMOJI && emojiEngine.isSearching()) {
+            emojiEngine.clearSearch();
+            refreshEmojiPanel();
+            return true;
+        }
+        return inputEngine.deleteWord();
     }
 
     // ─── Input helpers ────────────────────────────────────────────────────────

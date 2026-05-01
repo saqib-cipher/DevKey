@@ -390,6 +390,51 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     // ─── Backup / restore (JSON) ──────────────────────────────────────────────
+
+    /**
+     * Bitmask flags identifying which slices of state the user wants to
+     * include in an export, or accept from an import. Granular scopes let
+     * the user move a colour palette between devices without overwriting
+     * their snippets (and vice-versa).
+     */
+    private static final int SCOPE_THEME     = 1;
+    private static final int SCOPE_SNIPPETS  = 1 << 1;
+    private static final int SCOPE_LANGUAGES = 1 << 2;
+    private static final int SCOPE_SYMBOLS   = 1 << 3;
+    private static final int SCOPE_OTHER     = 1 << 4;
+    private static final int SCOPE_ALL =
+            SCOPE_THEME | SCOPE_SNIPPETS | SCOPE_LANGUAGES | SCOPE_SYMBOLS | SCOPE_OTHER;
+
+    /**
+     * Classifies a pref key into the {@code SCOPE_*} bucket it belongs to.
+     * Snippet rows are stored under the key prefix {@code custom_snip_} but
+     * also re-emitted in a structured "snippets" array, so the prefs-side
+     * classification is what governs whether the backing string is included
+     * when {@link #SCOPE_SNIPPETS} is set.
+     */
+    private int scopeOfPrefKey(String key) {
+        if (key == null) return SCOPE_OTHER;
+        if (key.startsWith("custom_snip_")) return SCOPE_SNIPPETS;
+        if (key.startsWith("custom_sym_"))  return SCOPE_SYMBOLS;
+        if (PREF_CUSTOM_LANGS.equals(key))  return SCOPE_LANGUAGES;
+        switch (key) {
+            case "bg_color":
+            case "key_color":
+            case "text_color":
+            case "accent_color":
+            case "theme_kind":
+            case "dark":
+            case "amoled":
+            case "key_radius_dp":
+            case "key_text_size_sp":
+            case "key_stroke_width_dp":
+            case "key_stroke_color":
+                return SCOPE_THEME;
+        }
+        if (key.startsWith("kb_bg_") || key.startsWith("bg_image")) return SCOPE_THEME;
+        return SCOPE_OTHER;
+    }
+
     /**
      * Builds a JSON document containing every CodeKeys preference. Preferences
      * the user has never set are stored under their actual current value, so
@@ -397,51 +442,63 @@ public class SettingsActivity extends AppCompatActivity {
      * restores the keyboard's state.
      */
     private String buildBackupJson() {
+        return buildBackupJson(SCOPE_ALL);
+    }
+
+    /** Scope-filtered variant of {@link #buildBackupJson()}. */
+    private String buildBackupJson(int scopeMask) {
         try {
             JSONObject root = new JSONObject();
             root.put("app", "CodeKeys");
             root.put("version", 1);
 
+            root.put("scopes", scopeMask);
+
             JSONObject all = new JSONObject();
             for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
+                String k = entry.getKey();
+                if ((scopeMask & scopeOfPrefKey(k)) == 0) continue;
                 Object v = entry.getValue();
                 if (v == null) {
-                    all.put(entry.getKey(), JSONObject.NULL);
+                    all.put(k, JSONObject.NULL);
                 } else if (v instanceof Boolean) {
-                    all.put(entry.getKey(), ((Boolean) v).booleanValue());
+                    all.put(k, ((Boolean) v).booleanValue());
                 } else if (v instanceof Integer) {
-                    all.put(entry.getKey(), ((Integer) v).intValue());
+                    all.put(k, ((Integer) v).intValue());
                 } else if (v instanceof Long) {
-                    all.put(entry.getKey(), ((Long) v).longValue());
+                    all.put(k, ((Long) v).longValue());
                 } else if (v instanceof Float) {
-                    all.put(entry.getKey(), (double) ((Float) v).floatValue());
+                    all.put(k, (double) ((Float) v).floatValue());
                 } else if (v instanceof Double) {
-                    all.put(entry.getKey(), ((Double) v).doubleValue());
+                    all.put(k, ((Double) v).doubleValue());
                 } else {
-                    all.put(entry.getKey(), v.toString());
+                    all.put(k, v.toString());
                 }
             }
             root.put("prefs", all);
 
-            // Snippets — stored under custom_snip_<LANG> keys; we mirror them
-            // into a structured array so a backup can be hand-edited safely.
-            JSONArray snippets = new JSONArray();
-            for (String lang : getAllLanguages()) {
-                List<String[]> rows = loadCustomSnippets(lang);
-                if (rows.isEmpty()) continue;
-                JSONObject langObj = new JSONObject();
-                langObj.put("lang", lang);
-                JSONArray arr = new JSONArray();
-                for (String[] s : rows) {
-                    JSONObject pair = new JSONObject();
-                    pair.put("trigger", s[0]);
-                    pair.put("expansion", s[1]);
-                    arr.put(pair);
+            // Snippets — also exported in a structured form so a backup can
+            // be hand-edited safely (and so older exports without
+            // custom_snip_<LANG> prefs can still be restored).
+            if ((scopeMask & SCOPE_SNIPPETS) != 0) {
+                JSONArray snippets = new JSONArray();
+                for (String lang : getAllLanguages()) {
+                    List<String[]> rows = loadCustomSnippets(lang);
+                    if (rows.isEmpty()) continue;
+                    JSONObject langObj = new JSONObject();
+                    langObj.put("lang", lang);
+                    JSONArray arr = new JSONArray();
+                    for (String[] s : rows) {
+                        JSONObject pair = new JSONObject();
+                        pair.put("trigger", s[0]);
+                        pair.put("expansion", s[1]);
+                        arr.put(pair);
+                    }
+                    langObj.put("entries", arr);
+                    snippets.put(langObj);
                 }
-                langObj.put("entries", arr);
-                snippets.put(langObj);
+                root.put("snippets", snippets);
             }
-            root.put("snippets", snippets);
 
             return root.toString(2);
         } catch (JSONException e) {
@@ -450,10 +507,14 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void exportSettingsJson() {
-        final String json = buildBackupJson();
+        showScopePicker(true, scopeMask -> exportSettingsJson(scopeMask));
+    }
+
+    private void exportSettingsJson(int scopeMask) {
+        final String json = buildBackupJson(scopeMask);
 
         LinearLayout panel = buildThemedDialogPanel("Export — copy this JSON",
-                "Backup includes themes, snippets, and every setting. Tap Copy to send it to your clipboard.");
+                "Selected sections only. Tap Copy to send the JSON to your clipboard.");
         EditText box = buildThemedMultilineEditText(null, json, 8);
         panel.addView(box);
 
@@ -474,8 +535,12 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void showImportDialog() {
+        showScopePicker(false, scopeMask -> showImportDialog(scopeMask));
+    }
+
+    private void showImportDialog(int scopeMask) {
         LinearLayout panel = buildThemedDialogPanel("Import backup",
-                "This will overwrite your themes, snippets, and settings.");
+                "Only the selected sections of the pasted JSON will be applied.");
         final EditText box = buildThemedMultilineEditText(
                 "Paste a CodeKeys backup JSON here…", null, 6);
         panel.addView(box);
@@ -489,7 +554,7 @@ public class SettingsActivity extends AppCompatActivity {
                                 Toast.LENGTH_SHORT).show();
                         return;
                     }
-                    if (applyBackupJson(text)) {
+                    if (applyBackupJson(text, scopeMask)) {
                         Toast.makeText(this, "Backup imported.",
                                 Toast.LENGTH_SHORT).show();
                         recreate();
@@ -497,6 +562,64 @@ public class SettingsActivity extends AppCompatActivity {
                         Toast.makeText(this, "Invalid backup JSON.",
                                 Toast.LENGTH_LONG).show();
                     }
+                })
+                .setNegativeButton("Cancel", null)
+                .create();
+        showThemedDialog(dlg);
+    }
+
+    /**
+     * Shows a small dialog with one toggle per backup scope (theme, snippets,
+     * languages, symbols, other settings) so the user can opt into exactly
+     * the slice they want. {@code onChosen} fires with the bitmask of
+     * selected {@code SCOPE_*} flags once the user taps the action button.
+     */
+    private interface ScopeChosen { void apply(int scopeMask); }
+    private void showScopePicker(boolean exporting, final ScopeChosen onChosen) {
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+
+        final boolean[] flags = { true, true, true, true, true };
+        final int[] scopeBits = {
+                SCOPE_THEME, SCOPE_SNIPPETS, SCOPE_LANGUAGES, SCOPE_SYMBOLS, SCOPE_OTHER
+        };
+        final String[] labels = {
+                "Theme (colours, shape, size)",
+                "Snippets",
+                "Custom languages",
+                "Symbol toolbars",
+                "Other settings"
+        };
+
+        LinearLayout panel = buildThemedDialogPanel(
+                exporting ? "Export — choose sections" : "Import — choose sections",
+                exporting
+                        ? "Pick which slices of your setup to include in the backup."
+                        : "Pick which slices to apply from the pasted backup.");
+
+        for (int i = 0; i < labels.length; i++) {
+            final int idx = i;
+            Switch sw = new Switch(this);
+            sw.setText(labels[i]);
+            sw.setTextColor(textCol);
+            sw.setChecked(flags[i]);
+            sw.setPadding(dp(4), dp(8), dp(4), dp(8));
+            sw.setOnCheckedChangeListener((b, c) -> flags[idx] = c);
+            panel.addView(sw);
+        }
+
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setView(wrapInScroll(panel))
+                .setPositiveButton(exporting ? "Next" : "Next", (d, w) -> {
+                    int mask = 0;
+                    for (int i = 0; i < flags.length; i++) {
+                        if (flags[i]) mask |= scopeBits[i];
+                    }
+                    if (mask == 0) {
+                        Toast.makeText(this, "Pick at least one section.",
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    onChosen.apply(mask);
                 })
                 .setNegativeButton("Cancel", null)
                 .create();
@@ -604,17 +727,37 @@ public class SettingsActivity extends AppCompatActivity {
      * CodeKeys backup so the caller can show an error.
      */
     private boolean applyBackupJson(String text) {
+        return applyBackupJson(text, SCOPE_ALL);
+    }
+
+    /**
+     * Scope-filtered variant of {@link #applyBackupJson(String)}: only the
+     * sections selected in {@code scopeMask} are applied. Existing prefs in
+     * other scopes are preserved (no clear()). Existing prefs *inside* the
+     * selected scopes are wiped first so a partial import doesn't leave
+     * stale theme/snippet data behind.
+     */
+    private boolean applyBackupJson(String text, int scopeMask) {
         try {
             JSONObject root = new JSONObject(text);
 
             SharedPreferences.Editor ed = prefs.edit();
-            ed.clear();
+
+            // Wipe in-scope prefs so partial imports can't merge with stale
+            // values (e.g. importing a "theme only" backup leaves snippets
+            // alone but replaces every theme key).
+            for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) {
+                if ((scopeMask & scopeOfPrefKey(e.getKey())) != 0) {
+                    ed.remove(e.getKey());
+                }
+            }
 
             JSONObject p = root.optJSONObject("prefs");
             if (p != null) {
                 java.util.Iterator<String> keys = p.keys();
                 while (keys.hasNext()) {
                     String k = keys.next();
+                    if ((scopeMask & scopeOfPrefKey(k)) == 0) continue;
                     Object v = p.get(k);
                     if (v == null || v == JSONObject.NULL) continue;
                     if (v instanceof Boolean) {
@@ -635,29 +778,31 @@ public class SettingsActivity extends AppCompatActivity {
 
             // Snippets: rebuild custom_snip_<LANG> values from the structured
             // form so old export formats stay valid.
-            JSONArray snippets = root.optJSONArray("snippets");
-            if (snippets != null) {
-                for (int i = 0; i < snippets.length(); i++) {
-                    JSONObject langObj = snippets.optJSONObject(i);
-                    if (langObj == null) continue;
-                    String lang = langObj.optString("lang", "");
-                    if (TextUtils.isEmpty(lang)) continue;
-                    JSONArray arr = langObj.optJSONArray("entries");
-                    if (arr == null) continue;
-                    StringBuilder sb = new StringBuilder();
-                    for (int j = 0; j < arr.length(); j++) {
-                        JSONObject pair = arr.optJSONObject(j);
-                        if (pair == null) continue;
-                        String t = pair.optString("trigger", "");
-                        String ex = pair.optString("expansion", "");
-                        if (TextUtils.isEmpty(t) || TextUtils.isEmpty(ex)) continue;
-                        if (t.indexOf('\u0001') >= 0 || t.indexOf('\u0002') >= 0
-                                || ex.indexOf('\u0001') >= 0
-                                || ex.indexOf('\u0002') >= 0) continue;
-                        if (sb.length() > 0) sb.append('\u0002');
-                        sb.append(t).append('\u0001').append(ex);
+            if ((scopeMask & SCOPE_SNIPPETS) != 0) {
+                JSONArray snippets = root.optJSONArray("snippets");
+                if (snippets != null) {
+                    for (int i = 0; i < snippets.length(); i++) {
+                        JSONObject langObj = snippets.optJSONObject(i);
+                        if (langObj == null) continue;
+                        String lang = langObj.optString("lang", "");
+                        if (TextUtils.isEmpty(lang)) continue;
+                        JSONArray arr = langObj.optJSONArray("entries");
+                        if (arr == null) continue;
+                        StringBuilder sb = new StringBuilder();
+                        for (int j = 0; j < arr.length(); j++) {
+                            JSONObject pair = arr.optJSONObject(j);
+                            if (pair == null) continue;
+                            String t = pair.optString("trigger", "");
+                            String ex = pair.optString("expansion", "");
+                            if (TextUtils.isEmpty(t) || TextUtils.isEmpty(ex)) continue;
+                            if (t.indexOf('\u0001') >= 0 || t.indexOf('\u0002') >= 0
+                                    || ex.indexOf('\u0001') >= 0
+                                    || ex.indexOf('\u0002') >= 0) continue;
+                            if (sb.length() > 0) sb.append('\u0002');
+                            sb.append(t).append('\u0001').append(ex);
+                        }
+                        ed.putString("custom_snip_" + lang, sb.toString());
                     }
-                    ed.putString("custom_snip_" + lang, sb.toString());
                 }
             }
             ed.apply();
@@ -705,41 +850,9 @@ public class SettingsActivity extends AppCompatActivity {
         preferencesContainer.addView(buildKeyboardHeightSelector(textCol, bg, accent));
         preferencesContainer.addView(buildKeySoundVolumeSelector(textCol, bg, accent));
 
-        // ── Appearance customisation ─────────────────────────────────────
-        preferencesContainer.addView(buildSectionHeader("Appearance", textCol));
-        preferencesContainer.addView(buildIntStepSelector(
-                "Key Corner Radius",
-                "How rounded each key looks. 0 = sharp, 20 = pill.",
-                "key_radius_dp", 12,
-                new int[]{0, 4, 8, 12, 16, 20, 28},
-                textCol, bg, accent));
-        preferencesContainer.addView(buildIntStepSelector(
-                "Key Text Size",
-                "Label size on letter / symbol keys (sp).",
-                "key_text_size_sp", 14,
-                new int[]{10, 12, 14, 16, 18, 20, 22},
-                textCol, bg, accent));
-        preferencesContainer.addView(buildIntStepSelector(
-                "Key Border Width",
-                "Stroke around each key. 0 hides the border.",
-                "key_stroke_width_dp", 0,
-                new int[]{0, 1, 2, 3, 4},
-                textCol, bg, accent));
-        preferencesContainer.addView(buildColorSelector(
-                "Key Border Color",
-                "Color of the stroke when border width > 0.",
-                "key_stroke_color", 0x00000000,
-                new int[]{0x00000000, 0x66FFFFFF, 0xFF888888, 0xFF000000, accent},
-                new String[]{"Off", "Soft", "Gray", "Black", "Accent"},
-                textCol, bg, accent));
-        preferencesContainer.addView(buildColorSelector(
-                "Key Color",
-                "Override the per-theme key surface color.",
-                "key_color",
-                prefs.getInt("key_color", 0xFF252545),
-                new int[]{0xFF252545, 0xFF111111, 0xFF333333, 0xFF1565C0, 0xFFFFFFFF},
-                new String[]{"Default", "Black", "Charcoal", "Blue", "White"},
-                textCol, bg, accent));
+        // Appearance (key shape, size, border, colours) lives inside the
+        // Custom theme panel — see renderCustomThemePanel — so users have a
+        // single place to tune their personal look instead of two.
 
         // ── Keyboard background ─────────────────────────────────────────
         preferencesContainer.addView(buildSectionHeader("Keyboard Background", textCol));
@@ -1364,7 +1477,7 @@ public class SettingsActivity extends AppCompatActivity {
         int accent = prefs.getInt("accent_color", 0xFF00E5FF);
         int keyCol = prefs.getInt("key_color", 0xFF252545);
 
-        // Border / heading
+        // Heading hint
         TextView hint = new TextView(this);
         hint.setText("Tap a colour to edit. Long-press the background for dark/light hint.");
         hint.setTextSize(11f);
@@ -1372,17 +1485,16 @@ public class SettingsActivity extends AppCompatActivity {
         hint.setPadding(dp(14), dp(6), dp(14), dp(8));
         customThemeContainer.addView(hint);
 
+        // ── Colours ──
         customThemeContainer.addView(buildColorRow("Background",   "bg_color",     bg));
         customThemeContainer.addView(buildColorRow("Key surface",  "key_color",    keyCol));
         customThemeContainer.addView(buildColorRow("Text",         "text_color",   textCol));
         customThemeContainer.addView(buildColorRow("Accent",       "accent_color", accent));
 
-        // Background-image row — opens a dialog with a skeleton preview the
-        // user can tweak before committing the picture as their wallpaper.
+        // Background-image row.
         customThemeContainer.addView(buildBackgroundImageRow());
 
-        // Dark/Light toggle row — drives the "dark" pref the IME uses for
-        // sundry contrast decisions.
+        // Dark/Light toggle row.
         Switch sw = new Switch(this);
         sw.setText("Treat as dark theme");
         sw.setTextColor(textCol);
@@ -1390,6 +1502,36 @@ public class SettingsActivity extends AppCompatActivity {
         sw.setPadding(dp(14), dp(6), dp(14), dp(6));
         sw.setOnCheckedChangeListener((b, c) -> prefs.edit().putBoolean("dark", c).apply());
         customThemeContainer.addView(sw);
+
+        // ── Shape & size ──
+        // Folded into the custom theme so the user only has one place to tune
+        // their personal look (was previously a separate "Appearance" section).
+        customThemeContainer.addView(buildSectionHeader("Shape & size", textCol));
+        customThemeContainer.addView(buildIntStepSelector(
+                "Key corner radius",
+                "How rounded each key looks. 0 = sharp, 28 = pill.",
+                "key_radius_dp", 12,
+                new int[]{0, 4, 8, 12, 16, 20, 28},
+                textCol, bg, accent));
+        customThemeContainer.addView(buildIntStepSelector(
+                "Key text size",
+                "Label size on letter / symbol keys (sp).",
+                "key_text_size_sp", 14,
+                new int[]{10, 12, 14, 16, 18, 20, 22},
+                textCol, bg, accent));
+        customThemeContainer.addView(buildIntStepSelector(
+                "Key border width",
+                "Stroke around each key. 0 hides the border.",
+                "key_stroke_width_dp", 0,
+                new int[]{0, 1, 2, 3, 4},
+                textCol, bg, accent));
+        customThemeContainer.addView(buildColorSelector(
+                "Key border color",
+                "Color of the stroke when border width > 0.",
+                "key_stroke_color", 0x00000000,
+                new int[]{0x00000000, 0x66FFFFFF, 0xFF888888, 0xFF000000, accent},
+                new String[]{"Off", "Soft", "Gray", "Black", "Accent"},
+                textCol, bg, accent));
     }
 
     /**
@@ -2024,7 +2166,7 @@ public class SettingsActivity extends AppCompatActivity {
         refresh.run();
 
         AlertDialog dlg = new AlertDialog.Builder(this)
-                .setView(wrapInScroll(list))
+                .setView(wrapInScroll(panel))
                 .setPositiveButton("Add snippet", null)
                 .setNegativeButton("Done", null)
                 .create();
