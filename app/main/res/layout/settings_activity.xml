@@ -220,12 +220,27 @@
             style="@style/SettingsHeader"
             android:text="DEFAULT LANGUAGE MODE" />
 
-        <LinearLayout
-            android:id="@+id/lang_buttons_row"
+        <!--
+            Language buttons live inside a HorizontalScrollView so users with
+            many custom presets can swipe through them without truncating
+            labels. Buttons themselves are wrap_content so each one is sized
+            to its name (Java-side) instead of being squeezed into equal weight
+            slots.
+        -->
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="4dp" />
+            android:layout_marginBottom="4dp"
+            android:scrollbars="none"
+            android:fillViewport="false">
+
+            <LinearLayout
+                android:id="@+id/lang_buttons_row"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical" />
+        </HorizontalScrollView>
 
         <!-- ══════════════════════════════════════════════════════
              CUSTOM LANGUAGE PRESETS
