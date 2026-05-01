@@ -325,12 +325,14 @@ public class CodeKeysIME extends InputMethodService {
     /**
      * Adds {@code s} to {@link #pendingClipChips} if it's a non-trivial,
      * non-duplicate string. Caps the list at 6 entries so the suggestion
-     * strip doesn't push regular candidates off-screen.
+     * strip doesn't push regular candidates off-screen. The chip itself
+     * truncates the preview to a short label, so even very large copied
+     * payloads are surfaced — they just render as a short "📋 …" preview.
      */
     private void addPendingClipChip(String s) {
         if (TextUtils.isEmpty(s)) return;
         s = s.trim();
-        if (s.length() < 2 || s.length() > 200) return;
+        if (s.length() < 2) return;
         if (pendingClipChips.contains(s)) return;
         pendingClipChips.add(0, s);
         while (pendingClipChips.size() > 6) {
@@ -860,15 +862,16 @@ public class CodeKeysIME extends InputMethodService {
                 },
                 /* onBackspaceSearch */ () -> {
                     haptic(emojiPanelView);
+                    // The in-panel emoji clear is *only* for the emoji search
+                    // query — it never edits the host EditText. Use the main
+                    // keyboard's backspace for text editing instead. This
+                    // keeps the two roles cleanly separated:
+                    //     Backspace  → text editing (always)
+                    //     Emoji ⌫    → search-query editing only
                     if (emojiEngine.isSearching()) {
                         emojiEngine.popSearchChar();
-                    } else if (inputEngine.deleteOne()) {
-                        // No active search — fall back to deleting the last
-                        // committed character, so the in-panel ⌫ key never
-                        // feels broken even when the search box is empty.
-                        noteDeletion();
+                        refreshEmojiPanel();
                     }
-                    refreshEmojiPanel();
                 },
                 /* onClearSearch */ () -> {
                     haptic(emojiPanelView);
@@ -976,16 +979,32 @@ public class CodeKeysIME extends InputMethodService {
         // Clipboard chips ride at the head of the row so the freshly-copied
         // content is one tap away. Each link / number / email parsed out of
         // the clip becomes its own chip beside the full clip.
+        //
+        // Two interactions:
+        //   • Tap   → paste, then drop just that chip from the strip.
+        //   • Swipe → dismiss just that chip from the strip. The clip stays
+        //             in the persistent ClipboardStore (panel + history), so
+        //             only the *suggestion-row UI* layer is affected here.
         if (!pendingClipChips.isEmpty()) {
-            for (final String clip : pendingClipChips) {
+            // Snapshot the list so removals during iteration don't trip the
+            // ConcurrentModification guard inside ArrayList.
+            ArrayList<String> snapshot = new ArrayList<>(pendingClipChips);
+            for (final String clip : snapshot) {
                 String label = clip.length() > 28 ? clip.substring(0, 28) + "…" : clip;
                 Button chip = ui.makeChip("📋 " + label, clipBg, textCol, true);
                 chip.setOnClickListener(v -> {
                     haptic(v);
                     inputEngine.commit(clip);
-                    pendingClipChips.clear();
+                    // UI-only removal: leave clipboardStore alone so the
+                    // clipboard panel still has the entry.
+                    pendingClipChips.remove(clip);
                     refreshSuggestions();
                     noteOperation();
+                });
+                attachChipSwipeDismiss(chip, () -> {
+                    // Pure UI dismissal — never touches clipboardStore.
+                    pendingClipChips.remove(clip);
+                    refreshSuggestions();
                 });
                 rowSuggestions.addView(chip);
             }
@@ -1021,6 +1040,44 @@ public class CodeKeysIME extends InputMethodService {
             });
             rowSuggestions.addView(chip);
         }
+    }
+
+    /**
+     * Attaches a swipe-to-dismiss gesture to a suggestion chip. A clear
+     * upward (or strongly horizontal) flick fires {@code onDismiss}; taps
+     * fall through to the chip's own click listener so paste-on-tap still
+     * works. The detector intentionally uses a vertical bias so horizontal
+     * scroll gestures on the suggestion strip aren't hijacked.
+     *
+     * <p>Critically, {@code onDismiss} should only mutate UI / suggestion
+     * state — the persistent {@link ClipboardStore} is never touched here so
+     * dismissed chips remain available in the clipboard panel.
+     */
+    private void attachChipSwipeDismiss(View chip, final Runnable onDismiss) {
+        final android.view.GestureDetector detector =
+                new android.view.GestureDetector(this,
+                        new android.view.GestureDetector.SimpleOnGestureListener() {
+                            @Override
+                            public boolean onFling(MotionEvent e1, MotionEvent e2,
+                                                   float vx, float vy) {
+                                if (e1 == null || e2 == null) return false;
+                                float dx = e2.getX() - e1.getX();
+                                float dy = e2.getY() - e1.getY();
+                                // Upward flick: strong vertical motion that
+                                // dominates the horizontal component.
+                                if (dy < -dp(24) && Math.abs(dy) > Math.abs(dx) * 1.2f) {
+                                    onDismiss.run();
+                                    return true;
+                                }
+                                return false;
+                            }
+                        });
+        chip.setOnTouchListener((v, ev) -> {
+            // Hand the event to the gesture detector first; if it claims the
+            // event, returning true short-circuits the click. Otherwise fall
+            // through so onClick still fires for taps.
+            return detector.onTouchEvent(ev);
+        });
     }
 
     // ─── Caps state machine ──────────────────────────────────────────────────
@@ -1159,30 +1216,22 @@ public class CodeKeysIME extends InputMethodService {
     }
 
     /**
-     * Backspace dispatcher: routes a single delete to whichever target the
-     * active panel claims. Emoji panel pops the search query (or, once empty,
-     * defers to the host EditText so the user is never stuck); everything
-     * else deletes from the host EditText directly.
+     * Backspace dispatcher: ALWAYS deletes a character from the host EditText
+     * via {@link InputConnection}, regardless of which panel is open. The
+     * emoji panel exposes its own dedicated clear key for editing the search
+     * query (see {@link #refreshEmojiPanel()} → {@code onBackspaceSearch}); the
+     * main keyboard backspace is reserved exclusively for text editing so the
+     * user can keep deleting committed text while picking emoji.
      *
      * @return true if a delete actually occurred (so the caller can ramp the
      *         hold-to-delete cadence).
      */
     private boolean performBackspaceDelete() {
-        if (panelMode == PanelMode.EMOJI && emojiEngine.isSearching()) {
-            emojiEngine.popSearchChar();
-            refreshEmojiPanel();
-            return true;
-        }
         return inputEngine.deleteOne();
     }
 
     /** Word-level analogue of {@link #performBackspaceDelete} for swipe-left. */
     private boolean performBackspaceDeleteWord() {
-        if (panelMode == PanelMode.EMOJI && emojiEngine.isSearching()) {
-            emojiEngine.clearSearch();
-            refreshEmojiPanel();
-            return true;
-        }
         return inputEngine.deleteWord();
     }
 
@@ -1311,11 +1360,102 @@ public class CodeKeysIME extends InputMethodService {
         if (isMultiline || noEnterAction
                 || actionId == EditorInfo.IME_ACTION_UNSPECIFIED
                 || actionId == EditorInfo.IME_ACTION_NONE) {
+            // Smart-list continuation only kicks in when Enter actually means
+            // "newline" (multiline / no-action editors). Single-line editors
+            // never need bullet handling and would lose their submit action.
+            if (tryHandleAutoList(ic)) return;
             ic.commitText("\n", 1);
             return;
         }
         ic.performEditorAction(actionId);
     }
+
+    /**
+     * Detects bullet / numbered list patterns at the start of the current
+     * line and either continues the list or exits it.
+     *
+     * <p>Recognised prefixes (with optional leading indentation made of
+     * spaces or tabs):
+     * <ul>
+     *   <li>{@code "• "} — bullet</li>
+     *   <li>{@code "- "} or {@code "* "} — markdown-style bullet</li>
+     *   <li>{@code "1. "}, {@code "2. "}, … — numbered list (auto-increments)</li>
+     * </ul>
+     *
+     * <p>Behaviour:
+     * <ul>
+     *   <li>Non-empty list item → commit {@code "\n" + indent + nextMarker}.</li>
+     *   <li>Empty list item (only the prefix) → strip the prefix and commit a
+     *       plain newline so the user exits the list cleanly.</li>
+     *   <li>Numbered prefix → next marker uses {@code N+1}.</li>
+     * </ul>
+     *
+     * <p>If the user has deleted the prefix manually before pressing Enter,
+     * the regex naturally fails to match and we fall through to the plain
+     * newline path, satisfying the "delete prefix → stop auto list" rule.
+     *
+     * @return true if this method handled the Enter; false to fall through
+     *         to default newline insertion.
+     */
+    private boolean tryHandleAutoList(InputConnection ic) {
+        if (!prefs.getBoolean("auto_list", true)) return false;
+        if (ic == null) return false;
+        // Don't continue lists while a selection is active — the user is
+        // replacing text, not appending a new line.
+        if (inputEngine.hasSelection()) return false;
+        CharSequence beforeCs = ic.getTextBeforeCursor(512, 0);
+        if (beforeCs == null) return false;
+        String before = beforeCs.toString();
+        int nl = before.lastIndexOf('\n');
+        String currentLine = nl >= 0 ? before.substring(nl + 1) : before;
+
+        // Capture: (indent)(marker)(space)(rest). marker is either a bullet
+        // glyph (•, -, *) or a digit run followed by a dot.
+        Matcher m = LIST_LINE_PATTERN.matcher(currentLine);
+        if (!m.matches()) return false;
+        String indent  = m.group(1);
+        String marker  = m.group(2);
+        String numStr  = m.group(3); // present only for numbered lists
+        String content = m.group(4);
+
+        if (content == null || content.trim().isEmpty()) {
+            // Empty list item → exit list mode by stripping the marker on
+            // the current line and committing a single newline. The user
+            // ends up on a fresh, un-prefixed line.
+            ic.beginBatchEdit();
+            int eraseLen = currentLine.length();
+            if (eraseLen > 0) ic.deleteSurroundingText(eraseLen, 0);
+            ic.commitText("\n", 1);
+            ic.endBatchEdit();
+            noteOperation();
+            return true;
+        }
+
+        String nextMarker;
+        if (numStr != null) {
+            try {
+                int n = Integer.parseInt(numStr);
+                nextMarker = (n + 1) + ".";
+            } catch (NumberFormatException ex) {
+                nextMarker = marker;
+            }
+        } else {
+            nextMarker = marker;
+        }
+        ic.commitText("\n" + indent + nextMarker + " ", 1);
+        noteOperation();
+        return true;
+    }
+
+    /**
+     * Pattern for an in-progress list line. Groups:
+     *   1 = leading indent (spaces / tabs, may be empty)
+     *   2 = full marker including the digit-dot for numbered items
+     *   3 = digit run for numbered items (null for bullets)
+     *   4 = the rest of the line after the marker's trailing space
+     */
+    private static final Pattern LIST_LINE_PATTERN =
+            Pattern.compile("^([ \\t]*)(\u2022|[-*]|(\\d+)\\.)\\s(.*)$");
 
     private void updateEnterButton(EditorInfo ei) {
         if (btnEnter == null) return;
@@ -1482,6 +1622,15 @@ public class CodeKeysIME extends InputMethodService {
 
         addPopupDivider(content);
 
+        // ── Smart-typing toggles (live-editable from the popup) ──
+        // Both toggles persist into prefs so they survive across IME
+        // sessions; the IME re-reads them at every keystroke / Enter so no
+        // additional refresh wiring is needed.
+        content.addView(makePopupToggleRow("Auto Brackets", "auto_close", true, pw));
+        content.addView(makePopupToggleRow("Auto List",     "auto_list",  true, pw));
+
+        addPopupDivider(content);
+
         // Switch input method (system IME picker).
         content.addView(makePopupIconRow(R.drawable.world, "Switch keyboard",
                 getKeyTextColor(), pw, this::showImePicker));
@@ -1562,6 +1711,65 @@ public class CodeKeysIME extends InputMethodService {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         row.setLayoutParams(lp);
         return row;
+    }
+
+    /**
+     * Popup row with a label on the left and a small ON/OFF pill on the
+     * right that flips a boolean preference. Tapping the row toggles the
+     * value in-place (the popup stays open so the user can flip multiple
+     * settings at once); the pill restyles to reflect the new state.
+     */
+    private View makePopupToggleRow(final String label, final String prefKey,
+                                    final boolean defaultVal, PopupWindow owner) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(10), dp(14), dp(10));
+        row.setClickable(true);
+        row.setBackgroundColor(0x00000000);
+
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextSize(14f);
+        tv.setTextColor(getKeyTextColor());
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        tv.setLayoutParams(tlp);
+        row.addView(tv);
+
+        final TextView pill = new TextView(this);
+        pill.setTextSize(11f);
+        pill.setTypeface(Typeface.DEFAULT_BOLD);
+        pill.setLetterSpacing(0.08f);
+        pill.setPadding(dp(10), dp(4), dp(10), dp(4));
+        pill.setGravity(Gravity.CENTER);
+        applyTogglePill(pill, prefs.getBoolean(prefKey, defaultVal));
+        row.addView(pill);
+
+        row.setOnClickListener(v -> {
+            boolean cur = prefs.getBoolean(prefKey, defaultVal);
+            boolean next = !cur;
+            prefs.edit().putBoolean(prefKey, next).apply();
+            applyTogglePill(pill, next);
+        });
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        row.setLayoutParams(lp);
+        return row;
+    }
+
+    private void applyTogglePill(TextView pill, boolean enabled) {
+        pill.setText(enabled ? "ON" : "OFF");
+        pill.setTextColor(enabled ? 0xFF000000 : dim(getKeyTextColor()));
+        int fill = enabled
+                ? getAccentColor()
+                : blend(getKeyBgColor(), 0xFF000000, 0.25f);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(fill);
+        bg.setCornerRadius(dp(10));
+        pill.setBackground(bg);
     }
 
     private int measure(View v) {
