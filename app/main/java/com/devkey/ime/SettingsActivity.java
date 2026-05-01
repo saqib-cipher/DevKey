@@ -1381,13 +1381,23 @@ public class SettingsActivity extends AppCompatActivity {
             }
 
             row.setOnClickListener(v -> {
+                // Selecting a preset applies the FULL theme — colours plus a
+                // coherent shape/size baseline — so the user gets a consistent
+                // look without having to also reset shape sliders by hand.
+                // Stroke colour is derived from the preset's accent so the
+                // outline reads as part of the same palette when stroke width
+                // is bumped up later.
                 prefs.edit()
-                        .putString("theme_kind", "preset")
-                        .putInt("bg_color",     theme[0])
-                        .putInt("key_color",    theme[1])
-                        .putInt("text_color",   theme[2])
-                        .putInt("accent_color", theme[3])
-                        .putBoolean("dark",  isDark)
+                        .putString("theme_kind",   "preset")
+                        .putInt("bg_color",        theme[0])
+                        .putInt("key_color",       theme[1])
+                        .putInt("text_color",      theme[2])
+                        .putInt("accent_color",    theme[3])
+                        .putInt("key_radius_dp",   12)
+                        .putInt("key_text_size_sp", 14)
+                        .putInt("key_stroke_width_dp", 0)
+                        .putInt("key_stroke_color", theme[3] & 0x80FFFFFF)
+                        .putBoolean("dark",        isDark)
                         .putBoolean("amoled", theme[0] == 0xFF000000)
                         .apply();
                 Toast.makeText(this,
