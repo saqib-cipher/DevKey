@@ -59,11 +59,10 @@ public class SettingsActivity extends AppCompatActivity {
     /** SharedPreferences key under which custom language names are stored. */
     private static final String PREF_CUSTOM_LANGS = "custom_langs";
 
-    /** Request code used by the SAF picker for the custom keyboard background. */
-    private static final int REQ_PICK_BG_IMAGE = 4242;
-
-    /** SharedPreferences keys for the custom background image. */
-    private static final String PREF_BG_IMAGE_URI     = "custom_bg_image_uri";
+    /** SharedPreferences keys for the custom background image. The URI key is
+     *  shared with the canonical "kb_bg_image_uri" pref read by the IME so the
+     *  skeleton-preview dialog and the rest of the app stay in sync. */
+    private static final String PREF_BG_IMAGE_URI     = "kb_bg_image_uri";
     private static final String PREF_BG_IMAGE_OPACITY = "custom_bg_image_opacity";
 
     private SharedPreferences prefs;
@@ -1053,9 +1052,11 @@ public class SettingsActivity extends AppCompatActivity {
                         uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             } catch (Exception ignored) {}
             prefs.edit()
-                    .putString("kb_bg_image_uri", uri.toString())
+                    .putString(PREF_BG_IMAGE_URI, uri.toString())
                     .putString("kb_bg_mode", "image")
                     .apply();
+            // If the skeleton-preview dialog is open, refresh its thumbnail.
+            if (pendingBgPreviewRefresh != null) pendingBgPreviewRefresh.run();
             renderPreferences();
         }
     }
@@ -1581,29 +1582,6 @@ public class SettingsActivity extends AppCompatActivity {
                 .setOnDismissListener(d -> pendingBgPreviewRefresh = null)
                 .create();
         showThemedDialog(dlg);
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQ_PICK_BG_IMAGE) return;
-        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
-
-        Uri uri = data.getData();
-        // Persist read access so the IME service can decode the image
-        // long after this Settings activity is gone.
-        try {
-            int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
-            if (data.getFlags() != 0) {
-                flags = data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION;
-            }
-            getContentResolver().takePersistableUriPermission(uri, flags);
-        } catch (SecurityException ignored) {
-            // ACTION_GET_CONTENT URIs aren't persistable; that's fine — the
-            // IME will still decode them via openInputStream while granted.
-        }
-        prefs.edit().putString(PREF_BG_IMAGE_URI, uri.toString()).apply();
-        if (pendingBgPreviewRefresh != null) pendingBgPreviewRefresh.run();
     }
 
     /**
