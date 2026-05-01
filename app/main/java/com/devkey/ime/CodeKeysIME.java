@@ -31,6 +31,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.TextView;
@@ -297,8 +298,21 @@ public class CodeKeysIME extends InputMethodService {
                 if (clip == null || clip.getItemCount() == 0) return;
                 CharSequence text = clip.getItemAt(0).coerceToText(this);
                 if (TextUtils.isEmpty(text)) return;
-                clipboardStore.add(text.toString());
+                String s = text.toString();
+                clipboardStore.add(s);
+                // Surface the fresh clip (and any obvious sub-chunks: URLs,
+                // emails, numbers) on the suggestion strip so the user can
+                // paste with one tap without opening the clipboard panel.
+                addPendingClipChip(s);
+                java.util.regex.Matcher m;
+                m = URL_PATTERN.matcher(s);
+                while (m.find()) addPendingClipChip(m.group());
+                m = EMAIL_PATTERN.matcher(s);
+                while (m.find()) addPendingClipChip(m.group());
+                m = NUMBER_PATTERN.matcher(s);
+                while (m.find()) addPendingClipChip(m.group().trim());
                 if (panelMode == PanelMode.CLIPBOARD) refreshClipboardPanel();
+                refreshSuggestions();
             } catch (Exception ignored) {
                 // Some apps mark clips as sensitive — reading throws. Skip.
             }
@@ -306,6 +320,22 @@ public class CodeKeysIME extends InputMethodService {
         try {
             systemClipboard.addPrimaryClipChangedListener(clipboardListener);
         } catch (Exception ignored) {}
+    }
+
+    /**
+     * Adds {@code s} to {@link #pendingClipChips} if it's a non-trivial,
+     * non-duplicate string. Caps the list at 6 entries so the suggestion
+     * strip doesn't push regular candidates off-screen.
+     */
+    private void addPendingClipChip(String s) {
+        if (TextUtils.isEmpty(s)) return;
+        s = s.trim();
+        if (s.length() < 2 || s.length() > 200) return;
+        if (pendingClipChips.contains(s)) return;
+        pendingClipChips.add(0, s);
+        while (pendingClipChips.size() > 6) {
+            pendingClipChips.remove(pendingClipChips.size() - 1);
+        }
     }
 
     private void unregisterSystemClipboardListener() {
@@ -1018,6 +1048,15 @@ public class CodeKeysIME extends InputMethodService {
         int radius = dp(getKeyRadiusDp());
         int strokeW = dp(getKeyStrokeWidthDp());
         int strokeC = getKeyStrokeColor();
+        // SYMBOLS panel hijacks the caps slot for a "shift-to-extra-symbols"
+        // toggle (Gboard parity). A small filled dot is the conventional
+        // glyph for that state — far less visually loud than the shift arrow.
+        if (panelMode == PanelMode.SYMBOLS) {
+            btnCaps.setImageResource(R.drawable.dot);
+            btnCaps.setColorFilter(getKeyTextColor());
+            btnCaps.setBackground(ui.roundedFill(keyBg, radius, strokeW, strokeC));
+            return;
+        }
         switch (capsState) {
             case CAPS_OFF:
                 btnCaps.setImageResource(R.drawable.arrow_big_up);
@@ -1067,7 +1106,7 @@ public class CodeKeysIME extends InputMethodService {
             @Override
             public void run() {
                 if (swiping[0]) return; // swipe path takes over
-                if (!inputEngine.deleteOne()) {
+                if (!performBackspaceDelete()) {
                     startTime[0] = 0;
                     return;
                 }
@@ -1081,16 +1120,16 @@ public class CodeKeysIME extends InputMethodService {
             int action = ev.getAction();
             if (action == MotionEvent.ACTION_DOWN) {
                 haptic(v);
-                // The main-keyboard backspace ALWAYS targets the host
-                // EditText. Removing characters from the emoji search query
-                // is exclusively the job of `emoji_search_clear` on the
-                // emoji panel, so panel state doesn't affect this gesture.
+                // The main-keyboard backspace doubles as the emoji-search
+                // backspace while the emoji panel is open: routing here keeps
+                // the panel layout free of a redundant clear key and matches
+                // the way letter taps already feed the search query.
                 startTime[0] = System.currentTimeMillis();
                 downX[0] = ev.getX();
                 wordsDeletedDuringSwipe[0] = 0;
                 swiping[0] = false;
                 // Initial single-character delete fires immediately on tap.
-                if (inputEngine.deleteOne()) noteDeletion();
+                if (performBackspaceDelete()) noteDeletion();
                 // Schedule the accelerating loop after a short pause so single
                 // taps don't start the repeat behaviour.
                 uiHandler.postDelayed(loop[0], 320);
@@ -1102,7 +1141,7 @@ public class CodeKeysIME extends InputMethodService {
                     uiHandler.removeCallbacks(loop[0]);
                     int wantDeletions = (int) (-dx / swipeUnitPx);
                     while (wordsDeletedDuringSwipe[0] < wantDeletions) {
-                        if (!inputEngine.deleteWord()) break;
+                        if (!performBackspaceDeleteWord()) break;
                         wordsDeletedDuringSwipe[0]++;
                         noteDeletion();
                     }
@@ -1117,6 +1156,34 @@ public class CodeKeysIME extends InputMethodService {
             }
             return false;
         });
+    }
+
+    /**
+     * Backspace dispatcher: routes a single delete to whichever target the
+     * active panel claims. Emoji panel pops the search query (or, once empty,
+     * defers to the host EditText so the user is never stuck); everything
+     * else deletes from the host EditText directly.
+     *
+     * @return true if a delete actually occurred (so the caller can ramp the
+     *         hold-to-delete cadence).
+     */
+    private boolean performBackspaceDelete() {
+        if (panelMode == PanelMode.EMOJI && emojiEngine.isSearching()) {
+            emojiEngine.popSearchChar();
+            refreshEmojiPanel();
+            return true;
+        }
+        return inputEngine.deleteOne();
+    }
+
+    /** Word-level analogue of {@link #performBackspaceDelete} for swipe-left. */
+    private boolean performBackspaceDeleteWord() {
+        if (panelMode == PanelMode.EMOJI && emojiEngine.isSearching()) {
+            emojiEngine.clearSearch();
+            refreshEmojiPanel();
+            return true;
+        }
+        return inputEngine.deleteWord();
     }
 
     // ─── Input helpers ────────────────────────────────────────────────────────
@@ -1351,39 +1418,76 @@ public class CodeKeysIME extends InputMethodService {
         content.addView(header);
 
         final PopupWindow pw = new PopupWindow(content,
-                dp(230), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+                dp(260), ViewGroup.LayoutParams.WRAP_CONTENT, true);
         pw.setOutsideTouchable(true);
         pw.setFocusable(true);
 
+        // Languages render as wrap_content chips inside a horizontal scroll
+        // so any number of installed languages stays one swipe away without
+        // pushing the popup off-screen vertically.
+        HorizontalScrollView langScroll = new HorizontalScrollView(this);
+        langScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout langRow = new LinearLayout(this);
+        langRow.setOrientation(LinearLayout.HORIZONTAL);
+        langRow.setPadding(dp(8), dp(2), dp(8), dp(6));
         for (final String lang : getAllLanguages()) {
-            content.addView(makePopupRow(
-                    (lang.equals(currentLang) ? "● " : "  ") + lang,
-                    lang.equals(currentLang) ? getAccentColor() : getKeyTextColor(),
-                    pw,
-                    () -> {
-                        currentLang = lang;
-                        prefs.edit().putString("lang", lang).apply();
-                        if (panelMode == PanelMode.KEYBOARD) {
-                            buildSymbolRow();
-                            buildSnippetRow();
-                        }
-                    }));
+            final boolean active = lang.equals(currentLang);
+            int bgCol = active
+                    ? blend(getAccentColor(), getKeyBgColor(), 0.25f)
+                    : blend(getKeyBgColor(), 0xFF000000, 0.12f);
+            int txtCol = active ? getKeyBgColor() : getKeyTextColor();
+            Button chip = new Button(this);
+            chip.setText(lang);
+            chip.setAllCaps(false);
+            chip.setTextSize(13f);
+            chip.setTextColor(txtCol);
+            chip.setMinHeight(0);
+            chip.setMinWidth(0);
+            chip.setMinimumHeight(0);
+            chip.setMinimumWidth(0);
+            chip.setPadding(dp(14), dp(6), dp(14), dp(6));
+            GradientDrawable chipBg2 = new GradientDrawable();
+            chipBg2.setColor(bgCol);
+            chipBg2.setCornerRadius(dp(14));
+            if (active) {
+                chipBg2.setStroke(dp(1), getAccentColor());
+            }
+            chip.setBackground(chipBg2);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            clp.setMarginEnd(dp(6));
+            chip.setLayoutParams(clp);
+            chip.setOnClickListener(v -> {
+                try { pw.dismiss(); } catch (Exception ignored) {}
+                currentLang = lang;
+                prefs.edit().putString("lang", lang).apply();
+                if (panelMode == PanelMode.KEYBOARD) {
+                    buildSymbolRow();
+                    buildSnippetRow();
+                }
+            });
+            langRow.addView(chip);
         }
+        langScroll.addView(langRow);
+        content.addView(langScroll);
 
         addPopupDivider(content);
 
-        // Quick panel jumps.
-        content.addView(makePopupRow("📋  Clipboard", getKeyTextColor(), pw,
-                () -> switchPanel(PanelMode.CLIPBOARD)));
-        content.addView(makePopupRow("☺  Emoji", getKeyTextColor(), pw,
-                () -> switchPanel(PanelMode.EMOJI)));
+        // Quick panel jumps — vector icons instead of emoji glyphs so they
+        // tint with the active theme and stay crisp at every scale.
+        content.addView(makePopupIconRow(R.drawable.clipboard_text, "Clipboard",
+                getKeyTextColor(), pw, () -> switchPanel(PanelMode.CLIPBOARD)));
+        content.addView(makePopupIconRow(R.drawable.mood_smile, "Emoji",
+                getKeyTextColor(), pw, () -> switchPanel(PanelMode.EMOJI)));
 
         addPopupDivider(content);
 
         // Switch input method (system IME picker).
-        content.addView(makePopupRow("🌐  Switch keyboard", getKeyTextColor(), pw, this::showImePicker));
+        content.addView(makePopupIconRow(R.drawable.world, "Switch keyboard",
+                getKeyTextColor(), pw, this::showImePicker));
 
-        content.addView(makePopupRow("⚙  Settings…", getAccentColor(), pw, () -> {
+        content.addView(makePopupIconRow(R.drawable.settings_2, "Settings…",
+                getAccentColor(), pw, () -> {
             Intent it = new Intent(this, SettingsActivity.class);
             it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(it);
@@ -1412,6 +1516,44 @@ public class CodeKeysIME extends InputMethodService {
         row.setPadding(dp(14), dp(10), dp(14), dp(10));
         row.setClickable(true);
         row.setBackgroundColor(0x00000000);
+        row.setOnClickListener(v -> {
+            try { owner.dismiss(); } catch (Exception ignored) {}
+            onClick.run();
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        row.setLayoutParams(lp);
+        return row;
+    }
+
+    /**
+     * Popup row with a tinted vector icon + label. Used in place of the older
+     * emoji-prefixed rows so the icons match the rest of the keyboard's
+     * Tabler iconography and pick up the active theme's tint.
+     */
+    private View makePopupIconRow(int iconRes, String label, int color,
+                                  PopupWindow owner, Runnable onClick) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(10), dp(14), dp(10));
+        row.setClickable(true);
+        row.setBackgroundColor(0x00000000);
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        icon.setColorFilter(color);
+        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(20), dp(20));
+        ilp.setMarginEnd(dp(12));
+        icon.setLayoutParams(ilp);
+        row.addView(icon);
+
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextSize(14f);
+        tv.setTextColor(color);
+        row.addView(tv);
+
         row.setOnClickListener(v -> {
             try { owner.dismiss(); } catch (Exception ignored) {}
             onClick.run();
@@ -1579,10 +1721,15 @@ public class CodeKeysIME extends InputMethodService {
         styleActionButton(btnSpace,        keyBg, textCol, radius, strokeW, strokeC);
         styleActionButton(btnRedo,         keyBg, textCol, radius, strokeW, strokeC);
         styleActionButton(btnEnter,        keyBg, accent,  radius, strokeW, strokeC);
-        styleArrowButton(btnArrowLeft,  keyBg, radius, strokeW, strokeC);
-        styleArrowButton(btnArrowRight, keyBg, radius, strokeW, strokeC);
-        styleArrowButton(btnArrowUp,    keyBg, radius, strokeW, strokeC);
-        styleArrowButton(btnArrowDown,  keyBg, radius, strokeW, strokeC);
+        // If the Enter key is currently in icon mode (no IME action label),
+        // re-apply the icon so the tint tracks the new accent colour.
+        if (btnEnter != null && android.text.TextUtils.isEmpty(btnEnter.getText())) {
+            applyEnterIcon(accent);
+        }
+        styleArrowButton(btnArrowLeft,  keyBg, textCol, radius, strokeW, strokeC);
+        styleArrowButton(btnArrowRight, keyBg, textCol, radius, strokeW, strokeC);
+        styleArrowButton(btnArrowUp,    keyBg, textCol, radius, strokeW, strokeC);
+        styleArrowButton(btnArrowDown,  keyBg, textCol, radius, strokeW, strokeC);
 
         // Caps + backspace inside the keyboard panel (only present when the
         // keyboard panel is bound).
@@ -1620,7 +1767,10 @@ public class CodeKeysIME extends InputMethodService {
         }
     }
 
-    /** Renders the enter key with the corner_down_left icon tinted to {@code tintColor}. */
+    /** Renders the enter key with the corner_down_left icon tinted to {@code tintColor}.
+     *  Uses the relative-drawable API exclusively so we don't accidentally
+     *  clobber the icon by mixing absolute/relative compound-drawable calls
+     *  (which silently nulled the drawable in earlier revisions). */
     private void applyEnterIcon(int tintColor) {
         if (btnEnter == null) return;
         android.graphics.drawable.Drawable d =
@@ -1628,18 +1778,25 @@ public class CodeKeysIME extends InputMethodService {
         if (d == null) return;
         d = d.mutate();
         d.setColorFilter(tintColor, android.graphics.PorterDuff.Mode.SRC_IN);
-        int sz = dp(20);
+        int sz = dp(22);
         d.setBounds(0, 0, sz, sz);
-        btnEnter.setCompoundDrawables(d, null, null, null);
-        btnEnter.setCompoundDrawablesRelative(null, null, null, null);
+        // Empty text + center gravity + relative-only compound drawable lets
+        // the icon sit centered horizontally inside the button regardless of
+        // RTL or padding.
         btnEnter.setText("");
+        btnEnter.setCompoundDrawablePadding(0);
+        btnEnter.setCompoundDrawablesRelative(d, null, null, null);
         btnEnter.setGravity(Gravity.CENTER);
+        btnEnter.setPadding(dp(8), 0, dp(8), 0);
     }
 
-    private void styleArrowButton(ImageButton b, int bg,
+    /** Apply the rounded fill AND tint the icon so arrows track the active
+     *  text colour just like the other icon buttons (caps, backspace, etc.). */
+    private void styleArrowButton(ImageButton b, int bg, int tint,
                                   int radius, int strokeW, int strokeC) {
         if (b == null) return;
         b.setBackground(ui.roundedFill(bg, radius, strokeW, strokeC));
+        b.setColorFilter(tint);
     }
 
     /** Returns the user-configured key-height multiplier, clamped to a sensible band. */

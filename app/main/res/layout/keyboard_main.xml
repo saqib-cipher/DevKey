@@ -95,19 +95,9 @@
         android:layout_marginTop="2dp"
         android:gravity="center_vertical">
 
-        <!-- Settings / Language popup trigger -->
-        <ImageButton
-            android:id="@+id/btn_settings"
-            android:layout_width="@dimen/key_action_width"
-            android:layout_height="match_parent"
-            android:layout_margin="@dimen/key_margin"
-            android:src="@drawable/settings-2"
-            android:scaleType="fitCenter"
-            android:padding="10dp"
-            android:background="#252545"
-            android:contentDescription="Settings" />
-
-        <!-- Symbols panel toggle (?123 — math symbols icon) -->
+        <!-- Symbols panel toggle (?123 — math symbols icon).
+             Placed first to put the high-frequency control under the thumb;
+             settings sits to its right since it's the rarer interaction. -->
         <ImageButton
             android:id="@+id/btn_symbols_panel"
             android:layout_width="@dimen/key_action_width"
@@ -118,6 +108,18 @@
             android:padding="10dp"
             android:background="#252545"
             android:contentDescription="Symbols" />
+
+        <!-- Settings / Language popup trigger -->
+        <ImageButton
+            android:id="@+id/btn_settings"
+            android:layout_width="@dimen/key_action_width"
+            android:layout_height="match_parent"
+            android:layout_margin="@dimen/key_margin"
+            android:src="@drawable/settings_2"
+            android:scaleType="fitCenter"
+            android:padding="10dp"
+            android:background="#252545"
+            android:contentDescription="Settings" />
 
         <!-- Emoji panel -->
         <ImageButton
@@ -180,7 +182,7 @@
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:layout_marginBottom="1dp"
-                android:src="@drawable/arrow-badge-up"
+                android:src="@drawable/arrow_badge_up"
                 android:background="#252545"
                 android:scaleType="fitCenter" />
 
@@ -190,7 +192,7 @@
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:layout_marginTop="1dp"
-                android:src="@drawable/arrow-badge-down"
+                android:src="@drawable/arrow_badge_down"
                 android:background="#252545"
                 android:scaleType="fitCenter" />
         </LinearLayout>
@@ -208,7 +210,7 @@
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:layout_marginBottom="1dp"
-                android:src="@drawable/arrow-badge-left"
+                android:src="@drawable/arrow_badge_left"
                 android:background="#252545"
                 android:scaleType="fitCenter" />
 
@@ -218,7 +220,7 @@
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:layout_marginTop="1dp"
-                android:src="@drawable/arrow-badge-right"
+                android:src="@drawable/arrow_badge_right"
                 android:background="#252545"
                 android:scaleType="fitCenter" />
         </LinearLayout>
