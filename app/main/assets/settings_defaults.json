@@ -9,6 +9,8 @@
     "key_sound_volume": 50,
     "key_height_scale": 1.0,
     "show_pc_keys": false,
+    "auto_close": true,
+    "auto_list": true,
     "theme_kind": "preset",
     "bg_color":     "#1A1A2E",
     "key_color":    "#252545",
