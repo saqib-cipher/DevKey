@@ -4,6 +4,8 @@
     Header bar + vertically-scrolling list of clipboard cards (runtime-filled).
 
     NOTE: No Material theme dependencies — IME applies colors programmatically.
+    Backgrounds are transparent so the user's chosen keyboard theme bg shows
+    through; per-card chrome is drawn in code so it can pick up the accent.
 -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -17,7 +19,7 @@
         android:layout_height="@dimen/clipboard_header_height"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="#141428"
+        android:background="@android:color/transparent"
         android:paddingStart="12dp"
         android:paddingEnd="6dp">
 
@@ -34,10 +36,13 @@
             android:id="@+id/clip_copy_selection"
             android:layout_width="78dp"
             android:layout_height="34dp"
-            android:text="⧉ Copy"
+            android:text="Copy"
             android:textSize="11sp"
             android:textAllCaps="false"
             android:textColor="#00E5FF"
+            android:drawableStart="@drawable/copy"
+            android:drawablePadding="4dp"
+            android:padding="6dp"
             android:background="#1F1F3D"
             android:layout_marginEnd="4dp" />
 
@@ -45,10 +50,13 @@
             android:id="@+id/clip_clear_all"
             android:layout_width="78dp"
             android:layout_height="34dp"
-            android:text="✕ Clear"
+            android:text="Clear"
             android:textSize="11sp"
             android:textAllCaps="false"
             android:textColor="#FF6666"
+            android:drawableStart="@drawable/x"
+            android:drawablePadding="4dp"
+            android:padding="6dp"
             android:background="#220F0F" />
     </LinearLayout>
 

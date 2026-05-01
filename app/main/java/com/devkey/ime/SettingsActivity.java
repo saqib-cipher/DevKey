@@ -5,7 +5,13 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -18,6 +24,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -52,12 +59,27 @@ public class SettingsActivity extends AppCompatActivity {
     /** SharedPreferences key under which custom language names are stored. */
     private static final String PREF_CUSTOM_LANGS = "custom_langs";
 
+    /** Request code used by the SAF picker for the custom keyboard background. */
+    private static final int REQ_PICK_BG_IMAGE = 4242;
+
+    /** SharedPreferences keys for the custom background image. */
+    private static final String PREF_BG_IMAGE_URI     = "custom_bg_image_uri";
+    private static final String PREF_BG_IMAGE_OPACITY = "custom_bg_image_opacity";
+
     private SharedPreferences prefs;
+
+    /**
+     * Re-rendering hook supplied by {@link #showBackgroundImageDialog} so the
+     * skeleton preview refreshes when the user returns from the SAF image
+     * picker. Cleared after the dialog is dismissed.
+     */
+    private Runnable pendingBgPreviewRefresh;
 
     // Cached views from the inflated XML.
     private ScrollView root;
     private LinearLayout preferencesContainer;
     private LinearLayout themesContainer;
+    private LinearLayout customThemeContainer;
     private LinearLayout langButtonsRow;
     private LinearLayout customLangList;
     private LinearLayout snippetRefBox;
@@ -92,6 +114,11 @@ public class SettingsActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("codekeys_prefs", MODE_PRIVATE);
+        // Seed defaults from assets/settings_defaults.json on first launch.
+        AssetDefaults.seedDefaults(this, prefs);
+        // Pick up any themes shipped in assets/themes.json so the grid below
+        // reflects the latest palette without a code change.
+        loadAssetThemes();
         setContentView(R.layout.settings_activity);
         bindViews();
         applyTheme();
@@ -103,11 +130,35 @@ public class SettingsActivity extends AppCompatActivity {
         renderSnippetReference();
     }
 
+    /** Themes/names/dark flags loaded from assets/themes.json (else hardcoded fallback). */
+    private int[][] activeThemes = THEMES;
+    private String[] activeThemeNames = THEME_NAMES;
+    private boolean[] activeThemeIsDark = THEME_IS_DARK;
+
+    private void loadAssetThemes() {
+        java.util.List<AssetDefaults.Theme> themes = AssetDefaults.loadThemes(this);
+        if (themes == null || themes.isEmpty()) return;
+        int n = themes.size();
+        int[][] palette = new int[n][4];
+        String[] names = new String[n];
+        boolean[] dark = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            AssetDefaults.Theme t = themes.get(i);
+            palette[i] = new int[]{ t.bgColor, t.keyColor, t.textColor, t.accentColor };
+            names[i]   = t.name;
+            dark[i]    = t.dark;
+        }
+        activeThemes = palette;
+        activeThemeNames = names;
+        activeThemeIsDark = dark;
+    }
+
     // ─── View binding ─────────────────────────────────────────────────────────
     private void bindViews() {
         root                 = findViewById(R.id.settings_scroll);
         preferencesContainer = findViewById(R.id.preferences_container);
         themesContainer      = findViewById(R.id.themes_container);
+        customThemeContainer = findViewById(R.id.custom_theme_container);
         langButtonsRow       = findViewById(R.id.lang_buttons_row);
         customLangList       = findViewById(R.id.custom_lang_list);
         snippetRefBox        = findViewById(R.id.snippet_ref_box);
@@ -204,27 +255,139 @@ public class SettingsActivity extends AppCompatActivity {
 
     // ─── Info / help ──────────────────────────────────────────────────────────
     private void showInfoDialog() {
-        String body =
-                "CodeKeys is a developer-focused on-screen keyboard.\n\n" +
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        int bg      = prefs.getInt("bg_color",   0xFF1A1A2E);
+        int accent  = prefs.getInt("accent_color", 0xFF00E5FF);
+
+        // Build a themed scrollable body so the About panel matches the
+        // user's selected colour palette instead of the platform default.
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(18), dp(20), dp(18));
+        box.setBackground(themedRoundedFill(bg, accent, dp(18), dp(1)));
+        scroll.addView(box);
+
+        TextView title = new TextView(this);
+        title.setText("CodeKeys");
+        title.setTextSize(20f);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(accent);
+        box.addView(title);
+
+        TextView tagline = new TextView(this);
+        tagline.setText("A developer-focused on-screen keyboard.");
+        tagline.setTextSize(12f);
+        tagline.setTextColor(dim(textCol));
+        tagline.setPadding(0, dp(4), 0, dp(14));
+        box.addView(tagline);
+
+        TextView features = new TextView(this);
+        features.setText(
                 "• Suggestions strip — autocomplete with corrections.\n" +
                 "• Snippet row — language-aware code templates (fn, for, if…).\n" +
                 "• Symbol row — frequently typed symbols, swipeable.\n" +
-                "• Emoji panel — search emoji by name (🔍).\n" +
+                "• Emoji panel — search emoji by name.\n" +
                 "• Clipboard panel — recent copies with pin & paste.\n" +
                 "• PC keys row — Esc, Tab, Ctrl, F-keys, Home/End/PgUp/PgDn.\n" +
-                "• Themes — eight presets, instant accent recolour.\n" +
+                "• Themes — preset palette plus full custom colours.\n" +
                 "• Custom snippets — add your own per-language triggers.\n" +
-                "• Backup & Restore — export/import as JSON (this screen).\n\n" +
-                "Setup:\n" +
-                "  ① Tap “Enable CodeKeys in System Settings”\n" +
-                "  ② Tap “Switch to CodeKeys (open IME picker)”\n\n" +
-                "Tip: long-press a snippet to see a preview of what it inserts.";
+                "• Backup & Restore — export/import as JSON (this screen)."
+        );
+        features.setTextSize(13f);
+        features.setTextColor(textCol);
+        features.setLineSpacing(0, 1.15f);
+        box.addView(features);
 
-        new AlertDialog.Builder(this)
-                .setTitle("About CodeKeys")
-                .setMessage(body)
+        TextView setupHeader = new TextView(this);
+        setupHeader.setText("Setup");
+        setupHeader.setTextSize(13f);
+        setupHeader.setTypeface(Typeface.DEFAULT_BOLD);
+        setupHeader.setTextColor(accent);
+        setupHeader.setPadding(0, dp(14), 0, dp(4));
+        box.addView(setupHeader);
+
+        TextView setup = new TextView(this);
+        setup.setText("① Tap “Enable CodeKeys in System Settings”\n" +
+                      "② Tap “Switch to CodeKeys (open IME picker)”\n\n" +
+                      "Tip: long-press a snippet to preview the inserted text.");
+        setup.setTextSize(12f);
+        setup.setTextColor(textCol);
+        box.addView(setup);
+
+        // Credits — clearly attributes the creator/developer.
+        View div = new View(this);
+        div.setBackgroundColor(blend(textCol, 0xFF000000, 0.7f));
+        LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1));
+        divLp.setMargins(0, dp(16), 0, dp(12));
+        box.addView(div, divLp);
+
+        TextView creditsHeader = new TextView(this);
+        creditsHeader.setText("About the developer");
+        creditsHeader.setTextSize(13f);
+        creditsHeader.setTypeface(Typeface.DEFAULT_BOLD);
+        creditsHeader.setTextColor(accent);
+        box.addView(creditsHeader);
+
+        TextView credits = new TextView(this);
+        credits.setText(
+                "Created & developed by Saqib (saqib-cipher).\n" +
+                "Built with care for developers who code on Android.\n" +
+                "Icons adapted from Tabler.io. Snippets, themes, and " +
+                "symbol presets ship as JSON in /assets so power users " +
+                "can extend them without rebuilding the app.\n\n" +
+                "Version 1.0.0"
+        );
+        credits.setTextSize(12f);
+        credits.setTextColor(textCol);
+        credits.setLineSpacing(0, 1.15f);
+        credits.setPadding(0, dp(4), 0, 0);
+        box.addView(credits);
+
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setView(scroll)
                 .setPositiveButton("Got it", null)
-                .show();
+                .create();
+        showThemedDialog(dlg);
+    }
+
+    /**
+     * Wraps an {@link AlertDialog} so its window background and title/button
+     * colours pick up the user's selected theme. Keeps the platform default
+     * positioning but trades the white system look for the keyboard palette.
+     */
+    private void showThemedDialog(AlertDialog dlg) {
+        int bg     = prefs.getInt("bg_color",     0xFF1A1A2E);
+        int accent = prefs.getInt("accent_color", 0xFF00E5FF);
+        dlg.setOnShowListener(d -> {
+            try {
+                if (dlg.getWindow() != null) {
+                    dlg.getWindow().setBackgroundDrawable(themedRoundedFill(bg, accent, dp(20), dp(1)));
+                }
+                Button pos = dlg.getButton(AlertDialog.BUTTON_POSITIVE);
+                if (pos != null) pos.setTextColor(accent);
+                Button neg = dlg.getButton(AlertDialog.BUTTON_NEGATIVE);
+                if (neg != null) neg.setTextColor(accent);
+                Button neu = dlg.getButton(AlertDialog.BUTTON_NEUTRAL);
+                if (neu != null) neu.setTextColor(accent);
+            } catch (Throwable ignored) {}
+        });
+        dlg.show();
+    }
+
+    /**
+     * Builds a rounded-rect drawable using the theme's bg colour with a
+     * 1dp accent stroke — used as a window background for dialogs and as
+     * the background for themed EditText fields.
+     */
+    private android.graphics.drawable.GradientDrawable themedRoundedFill(
+            int fillColor, int strokeColor, int radiusPx, int strokeWidthPx) {
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+        gd.setColor(fillColor);
+        gd.setCornerRadius(radiusPx);
+        gd.setStroke(strokeWidthPx, strokeColor);
+        return gd;
     }
 
     // ─── Backup / restore (JSON) ──────────────────────────────────────────────
@@ -290,22 +453,13 @@ public class SettingsActivity extends AppCompatActivity {
     private void exportSettingsJson() {
         final String json = buildBackupJson();
 
-        ScrollView scroll = new ScrollView(this);
-        EditText box = new EditText(this);
-        box.setText(json);
-        box.setTextSize(11f);
-        box.setTypeface(Typeface.MONOSPACE);
-        box.setPadding(dp(12), dp(10), dp(12), dp(10));
-        box.setMinLines(8);
-        box.setGravity(Gravity.TOP | Gravity.START);
-        box.setInputType(InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        scroll.addView(box);
+        LinearLayout panel = buildThemedDialogPanel("Export — copy this JSON",
+                "Backup includes themes, snippets, and every setting. Tap Copy to send it to your clipboard.");
+        EditText box = buildThemedMultilineEditText(null, json, 8);
+        panel.addView(box);
 
-        new AlertDialog.Builder(this)
-                .setTitle("Export — copy this JSON")
-                .setView(scroll)
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setView(wrapInScroll(panel))
                 .setPositiveButton("Copy", (d, w) -> {
                     ClipboardManager cm = (ClipboardManager)
                             getSystemService(Context.CLIPBOARD_SERVICE);
@@ -316,27 +470,19 @@ public class SettingsActivity extends AppCompatActivity {
                     }
                 })
                 .setNegativeButton("Close", null)
-                .show();
+                .create();
+        showThemedDialog(dlg);
     }
 
     private void showImportDialog() {
-        ScrollView scroll = new ScrollView(this);
-        final EditText box = new EditText(this);
-        box.setHint("Paste a CodeKeys backup JSON here…");
-        box.setTextSize(11f);
-        box.setTypeface(Typeface.MONOSPACE);
-        box.setPadding(dp(12), dp(10), dp(12), dp(10));
-        box.setMinLines(6);
-        box.setGravity(Gravity.TOP | Gravity.START);
-        box.setInputType(InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        scroll.addView(box);
+        LinearLayout panel = buildThemedDialogPanel("Import backup",
+                "This will overwrite your themes, snippets, and settings.");
+        final EditText box = buildThemedMultilineEditText(
+                "Paste a CodeKeys backup JSON here…", null, 6);
+        panel.addView(box);
 
-        new AlertDialog.Builder(this)
-                .setTitle("Import backup")
-                .setMessage("This will overwrite your themes, snippets, and settings.")
-                .setView(scroll)
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setView(wrapInScroll(panel))
                 .setPositiveButton("Import", (d, w) -> {
                     String text = box.getText().toString().trim();
                     if (TextUtils.isEmpty(text)) {
@@ -354,7 +500,103 @@ public class SettingsActivity extends AppCompatActivity {
                     }
                 })
                 .setNegativeButton("Cancel", null)
-                .show();
+                .create();
+        showThemedDialog(dlg);
+    }
+
+    /**
+     * Builds the standard "themed dialog" container — a vertical {@link LinearLayout}
+     * with a header (title + optional subtitle) painted in the user's theme.
+     * Callers append their controls and wrap with {@link #wrapInScroll(View)}.
+     */
+    private LinearLayout buildThemedDialogPanel(String title, String subtitle) {
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        int accent  = prefs.getInt("accent_color", 0xFF00E5FF);
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20), dp(18), dp(20), dp(18));
+
+        if (!TextUtils.isEmpty(title)) {
+            TextView t = new TextView(this);
+            t.setText(title);
+            t.setTextSize(17f);
+            t.setTypeface(Typeface.DEFAULT_BOLD);
+            t.setTextColor(accent);
+            panel.addView(t);
+        }
+        if (!TextUtils.isEmpty(subtitle)) {
+            TextView s = new TextView(this);
+            s.setText(subtitle);
+            s.setTextSize(12f);
+            s.setTextColor(dim(textCol));
+            s.setPadding(0, dp(4), 0, dp(12));
+            panel.addView(s);
+        }
+        return panel;
+    }
+
+    private ScrollView wrapInScroll(View child) {
+        ScrollView sv = new ScrollView(this);
+        sv.addView(child);
+        return sv;
+    }
+
+    /**
+     * Builds an EditText styled to match the active theme: bg colour from the
+     * theme, accent stroke, rounded corners, monospace text. Used by every
+     * themed dialog so they all share the same look.
+     */
+    private EditText buildThemedMultilineEditText(String hint, String initialText, int minLines) {
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        int bg      = prefs.getInt("bg_color",   0xFF1A1A2E);
+        int accent  = prefs.getInt("accent_color", 0xFF00E5FF);
+
+        EditText box = new EditText(this);
+        if (initialText != null) box.setText(initialText);
+        if (hint != null) box.setHint(hint);
+        box.setTextSize(11f);
+        box.setTypeface(Typeface.MONOSPACE);
+        box.setPadding(dp(14), dp(12), dp(14), dp(12));
+        box.setMinLines(minLines);
+        box.setGravity(Gravity.TOP | Gravity.START);
+        box.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        box.setBackground(themedRoundedFill(blend(bg, 0xFFFFFFFF, 0.05f),
+                accent, dp(12), dp(1)));
+        box.setTextColor(textCol);
+        box.setHintTextColor(dim(textCol));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, dp(6), 0, dp(6));
+        box.setLayoutParams(lp);
+        return box;
+    }
+
+    /** Single-line variant for triggers / language names / hex inputs. */
+    private EditText buildThemedSingleLineEditText(String hint, String initialText) {
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        int bg      = prefs.getInt("bg_color",   0xFF1A1A2E);
+        int accent  = prefs.getInt("accent_color", 0xFF00E5FF);
+
+        EditText box = new EditText(this);
+        if (initialText != null) box.setText(initialText);
+        if (hint != null) box.setHint(hint);
+        box.setTextSize(13f);
+        box.setSingleLine(true);
+        box.setPadding(dp(14), dp(10), dp(14), dp(10));
+        box.setBackground(themedRoundedFill(blend(bg, 0xFFFFFFFF, 0.05f),
+                accent, dp(12), dp(1)));
+        box.setTextColor(textCol);
+        box.setHintTextColor(dim(textCol));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, dp(6), 0, dp(6));
+        box.setLayoutParams(lp);
+        return box;
     }
 
     /**
@@ -979,12 +1221,13 @@ public class SettingsActivity extends AppCompatActivity {
     private void renderThemes() {
         themesContainer.removeAllViews();
         int currentBg = prefs.getInt("bg_color", 0xFF1A1A2E);
+        boolean customSelected = "custom".equals(prefs.getString("theme_kind", "preset"));
 
-        for (int i = 0; i < THEMES.length; i++) {
-            final int[] theme = THEMES[i];
-            final String name = THEME_NAMES[i];
-            final boolean isDark = THEME_IS_DARK[i];
-            boolean active = (currentBg == theme[0]);
+        for (int i = 0; i < activeThemes.length; i++) {
+            final int[] theme = activeThemes[i];
+            final String name = activeThemeNames[i];
+            final boolean isDark = activeThemeIsDark[i];
+            boolean active = !customSelected && (currentBg == theme[0]);
 
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
@@ -1025,6 +1268,7 @@ public class SettingsActivity extends AppCompatActivity {
 
             row.setOnClickListener(v -> {
                 prefs.edit()
+                        .putString("theme_kind", "preset")
                         .putInt("bg_color",     theme[0])
                         .putInt("key_color",    theme[1])
                         .putInt("text_color",   theme[2])
@@ -1040,6 +1284,604 @@ public class SettingsActivity extends AppCompatActivity {
 
             themesContainer.addView(row);
         }
+
+        // Custom theme entry (always last). Selecting it shows the colour
+        // pickers below; unselecting (by tapping any preset) hides them.
+        themesContainer.addView(buildCustomThemeRow(customSelected));
+        renderCustomThemePanel(customSelected);
+    }
+
+    /**
+     * Builds the "Custom" theme row that lives below the preset list. Tapping
+     * the row flips {@code theme_kind} to {@code custom} and reveals the
+     * colour-picker panel; the preset rows remain available so the user can
+     * jump back any time.
+     */
+    private LinearLayout buildCustomThemeRow(boolean active) {
+        int bg = prefs.getInt("bg_color", 0xFF1A1A2E);
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        int accent = prefs.getInt("accent_color", 0xFF00E5FF);
+        int keyCol = prefs.getInt("key_color", 0xFF252545);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackgroundColor(bg);
+        row.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rlp.setMargins(0, 0, 0, dp(3));
+        row.setLayoutParams(rlp);
+
+        int[] swatches = { bg, keyCol, textCol, accent };
+        for (int c : swatches) {
+            View s = new View(this);
+            s.setBackgroundColor(c);
+            LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(20), dp(20));
+            slp.setMargins(0, 0, dp(4), 0);
+            s.setLayoutParams(slp);
+            row.addView(s);
+        }
+
+        TextView nameView = new TextView(this);
+        nameView.setText("✎ Custom");
+        nameView.setTextSize(13f);
+        nameView.setTextColor(textCol);
+        nameView.setLayoutParams(new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        nameView.setPadding(dp(10), 0, 0, 0);
+        row.addView(nameView);
+
+        if (active) {
+            TextView check = new TextView(this);
+            check.setText("✓ active");
+            check.setTextSize(11f);
+            check.setTextColor(accent);
+            row.addView(check);
+        }
+
+        row.setOnClickListener(v -> {
+            prefs.edit().putString("theme_kind", "custom").apply();
+            renderThemes();
+        });
+        return row;
+    }
+
+    /**
+     * Renders the four colour-picker rows (background / key / text / accent)
+     * inside {@link #customThemeContainer}. Only visible when the user has
+     * selected the Custom theme entry — preset selections collapse it.
+     */
+    private void renderCustomThemePanel(boolean visible) {
+        if (customThemeContainer == null) return;
+        customThemeContainer.removeAllViews();
+        customThemeContainer.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (!visible) return;
+
+        int bg = prefs.getInt("bg_color", 0xFF1A1A2E);
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        int accent = prefs.getInt("accent_color", 0xFF00E5FF);
+        int keyCol = prefs.getInt("key_color", 0xFF252545);
+
+        // Border / heading
+        TextView hint = new TextView(this);
+        hint.setText("Tap a colour to edit. Long-press the background for dark/light hint.");
+        hint.setTextSize(11f);
+        hint.setTextColor(dim(textCol));
+        hint.setPadding(dp(14), dp(6), dp(14), dp(8));
+        customThemeContainer.addView(hint);
+
+        customThemeContainer.addView(buildColorRow("Background",   "bg_color",     bg));
+        customThemeContainer.addView(buildColorRow("Key surface",  "key_color",    keyCol));
+        customThemeContainer.addView(buildColorRow("Text",         "text_color",   textCol));
+        customThemeContainer.addView(buildColorRow("Accent",       "accent_color", accent));
+
+        // Background-image row — opens a dialog with a skeleton preview the
+        // user can tweak before committing the picture as their wallpaper.
+        customThemeContainer.addView(buildBackgroundImageRow());
+
+        // Dark/Light toggle row — drives the "dark" pref the IME uses for
+        // sundry contrast decisions.
+        Switch sw = new Switch(this);
+        sw.setText("Treat as dark theme");
+        sw.setTextColor(textCol);
+        sw.setChecked(prefs.getBoolean("dark", true));
+        sw.setPadding(dp(14), dp(6), dp(14), dp(6));
+        sw.setOnCheckedChangeListener((b, c) -> prefs.edit().putBoolean("dark", c).apply());
+        customThemeContainer.addView(sw);
+    }
+
+    /**
+     * One row in the custom-theme panel that opens the background-image
+     * editor. Mirrors {@link #buildColorRow} visually so it slots in
+     * cleanly between the colour rows.
+     */
+    private LinearLayout buildBackgroundImageRow() {
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        int bg      = prefs.getInt("bg_color",   0xFF1A1A2E);
+        int accent  = prefs.getInt("accent_color", 0xFF00E5FF);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(8), dp(14), dp(8));
+        row.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rlp.setMargins(0, 0, 0, dp(2));
+        row.setLayoutParams(rlp);
+
+        // Tiny preview swatch — a thumbnail of the selected image, or a
+        // dashed accent border if nothing is set yet.
+        View swatch = new View(this);
+        String uriStr = prefs.getString(PREF_BG_IMAGE_URI, null);
+        Bitmap thumb = TextUtils.isEmpty(uriStr) ? null : decodeUriThumbnail(uriStr, dp(28));
+        if (thumb != null) {
+            swatch.setBackground(new android.graphics.drawable.BitmapDrawable(getResources(), thumb));
+        } else {
+            android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+            gd.setColor(blend(bg, 0xFF000000, 0.2f));
+            gd.setStroke(dp(1), accent);
+            gd.setCornerRadius(dp(4));
+            swatch.setBackground(gd);
+        }
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(28), dp(28));
+        slp.setMargins(0, 0, dp(10), 0);
+        swatch.setLayoutParams(slp);
+        row.addView(swatch);
+
+        TextView name = new TextView(this);
+        name.setText("Background image");
+        name.setTextSize(13f);
+        name.setTextColor(textCol);
+        name.setLayoutParams(new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(name);
+
+        TextView state = new TextView(this);
+        state.setText(TextUtils.isEmpty(uriStr) ? "None" : "Custom");
+        state.setTextSize(11f);
+        state.setTextColor(dim(textCol));
+        state.setPadding(dp(8), 0, dp(8), 0);
+        row.addView(state);
+
+        View.OnClickListener open = v -> showBackgroundImageDialog();
+        row.setOnClickListener(open);
+        swatch.setOnClickListener(open);
+        return row;
+    }
+
+    /**
+     * Background image editor — shows a skeleton keyboard preview overlaid on
+     * the chosen image and lets the user tweak opacity before committing.
+     * The skeleton is a stylised mock of {@link CodeKeysIME}'s actual layout
+     * (suggestion strip + four key rows + spacebar) so users can judge how
+     * legible their picture will be once keys sit on top.
+     */
+    private void showBackgroundImageDialog() {
+        final LinearLayout panel = buildThemedDialogPanel("Background image",
+                "Pick a picture and adjust opacity. The skeleton below shows roughly "
+                        + "how keys will sit on top of it.");
+
+        // Skeleton preview — sized so a phone keyboard's aspect (~3:1) is roughly
+        // preserved. Updated whenever the picker returns or the slider moves.
+        final KeyboardSkeletonPreview preview = new KeyboardSkeletonPreview(this);
+        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(160));
+        plp.setMargins(0, dp(8), 0, dp(8));
+        preview.setLayoutParams(plp);
+        panel.addView(preview);
+
+        // Opacity slider (SeekBar 0..100). 0% means image fully hidden behind
+        // theme colour; 100% means full image alpha.
+        final TextView opacityLabel = new TextView(this);
+        opacityLabel.setTextSize(12f);
+        opacityLabel.setTextColor(prefs.getInt("text_color", 0xFFE8E8FF));
+        panel.addView(opacityLabel);
+
+        final SeekBar opacityBar = new SeekBar(this);
+        opacityBar.setMax(100);
+        int op = Math.max(0, Math.min(100, prefs.getInt(PREF_BG_IMAGE_OPACITY, 70)));
+        opacityBar.setProgress(op);
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        blp.setMargins(0, dp(2), 0, dp(8));
+        opacityBar.setLayoutParams(blp);
+        panel.addView(opacityBar);
+
+        // Pick / remove buttons — laid out side by side beneath the slider.
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setPadding(0, dp(4), 0, 0);
+        Button pick = new Button(this);
+        pick.setText("Pick image…");
+        pick.setAllCaps(false);
+        Button clear = new Button(this);
+        clear.setText("Remove image");
+        clear.setAllCaps(false);
+        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        alp.setMargins(0, 0, dp(4), 0);
+        pick.setLayoutParams(alp);
+        LinearLayout.LayoutParams alp2 = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        alp2.setMargins(dp(4), 0, 0, 0);
+        clear.setLayoutParams(alp2);
+        int accent = prefs.getInt("accent_color", 0xFF00E5FF);
+        int bgCol  = prefs.getInt("bg_color",   0xFF1A1A2E);
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        pick.setBackground(themedRoundedFill(blend(bgCol, accent, 0.18f), accent, dp(10), dp(1)));
+        pick.setTextColor(accent);
+        clear.setBackground(themedRoundedFill(blend(bgCol, 0xFFFFFFFF, 0.05f), dim(textCol), dp(10), dp(1)));
+        clear.setTextColor(textCol);
+        actions.addView(pick);
+        actions.addView(clear);
+        panel.addView(actions);
+
+        // Loader — re-reads the URI from prefs (so the picker callback can
+        // simply persist the URI then trigger this) and pushes the bitmap
+        // into the preview at the current slider position.
+        final Runnable refresh = () -> {
+            String uri = prefs.getString(PREF_BG_IMAGE_URI, null);
+            Bitmap bmp = TextUtils.isEmpty(uri) ? null : decodeUriThumbnail(uri, dp(480));
+            preview.setImage(bmp);
+            preview.setImageOpacity(opacityBar.getProgress());
+            opacityLabel.setText("Opacity: " + opacityBar.getProgress() + "%");
+            clear.setEnabled(!TextUtils.isEmpty(uri));
+            clear.setAlpha(TextUtils.isEmpty(uri) ? 0.5f : 1f);
+        };
+        refresh.run();
+
+        opacityBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar s, int progress, boolean fromUser) {
+                preview.setImageOpacity(progress);
+                opacityLabel.setText("Opacity: " + progress + "%");
+            }
+            @Override public void onStartTrackingTouch(SeekBar s) {}
+            @Override public void onStopTrackingTouch(SeekBar s) {}
+        });
+
+        pick.setOnClickListener(v -> {
+            // Stash the refresh callback so onActivityResult can re-render
+            // the preview without holding a reference to the dialog.
+            pendingBgPreviewRefresh = refresh;
+            try {
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("image/*");
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                startActivityForResult(intent, REQ_PICK_BG_IMAGE);
+            } catch (android.content.ActivityNotFoundException ex) {
+                // Fall back to legacy gallery intent on devices without SAF.
+                Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
+                fallback.setType("image/*");
+                startActivityForResult(fallback, REQ_PICK_BG_IMAGE);
+            }
+        });
+
+        clear.setOnClickListener(v -> {
+            prefs.edit().remove(PREF_BG_IMAGE_URI).apply();
+            refresh.run();
+        });
+
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setView(wrapInScroll(panel))
+                .setPositiveButton("Apply", (d, w) -> {
+                    prefs.edit()
+                            .putInt(PREF_BG_IMAGE_OPACITY, opacityBar.getProgress())
+                            .apply();
+                    // Bumping theme_kind to "custom" so the IME knows to
+                    // honour the picture instead of falling back to a preset.
+                    prefs.edit().putString("theme_kind", "custom").apply();
+                    renderCustomThemePanel(true);
+                    Toast.makeText(this, "Background applied.", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cancel", null)
+                .setOnDismissListener(d -> pendingBgPreviewRefresh = null)
+                .create();
+        showThemedDialog(dlg);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_PICK_BG_IMAGE) return;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+
+        Uri uri = data.getData();
+        // Persist read access so the IME service can decode the image
+        // long after this Settings activity is gone.
+        try {
+            int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            if (data.getFlags() != 0) {
+                flags = data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            }
+            getContentResolver().takePersistableUriPermission(uri, flags);
+        } catch (SecurityException ignored) {
+            // ACTION_GET_CONTENT URIs aren't persistable; that's fine — the
+            // IME will still decode them via openInputStream while granted.
+        }
+        prefs.edit().putString(PREF_BG_IMAGE_URI, uri.toString()).apply();
+        if (pendingBgPreviewRefresh != null) pendingBgPreviewRefresh.run();
+    }
+
+    /**
+     * Decodes an image URI down to roughly {@code targetPx} on its longest
+     * edge. Returns {@code null} if the URI cannot be opened or decoded —
+     * callers should treat that as "no image set".
+     */
+    private Bitmap decodeUriThumbnail(String uriStr, int targetPx) {
+        if (TextUtils.isEmpty(uriStr) || targetPx <= 0) return null;
+        try {
+            Uri uri = Uri.parse(uriStr);
+            // First pass — bounds only, to compute a reasonable inSampleSize.
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            java.io.InputStream in = getContentResolver().openInputStream(uri);
+            if (in == null) return null;
+            BitmapFactory.decodeStream(in, null, bounds);
+            try { in.close(); } catch (java.io.IOException ignored) {}
+            int sample = 1;
+            int max = Math.max(bounds.outWidth, bounds.outHeight);
+            while (max / sample > targetPx * 2) sample *= 2;
+
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inSampleSize = sample;
+            java.io.InputStream in2 = getContentResolver().openInputStream(uri);
+            if (in2 == null) return null;
+            Bitmap bmp = BitmapFactory.decodeStream(in2, null, opts);
+            try { in2.close(); } catch (java.io.IOException ignored) {}
+            return bmp;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Custom view that draws a chosen image as a wallpaper with a stylised
+     * keyboard skeleton (suggestion strip + 4 key rows + bottom row) overlaid
+     * so users can preview how their image will look behind real keys.
+     */
+    private final class KeyboardSkeletonPreview extends View {
+        private Bitmap image;
+        private int imageOpacity = 70; // 0..100
+        private final Paint imagePaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+        private final Paint bgPaint = new Paint();
+        private final Paint keyPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint accentPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint borderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        KeyboardSkeletonPreview(Context ctx) {
+            super(ctx);
+            keyPaint.setStyle(Paint.Style.FILL);
+            accentPaint.setStyle(Paint.Style.FILL);
+            borderPaint.setStyle(Paint.Style.STROKE);
+            borderPaint.setStrokeWidth(dp(1));
+        }
+
+        void setImage(Bitmap bmp) { this.image = bmp; invalidate(); }
+        void setImageOpacity(int op) {
+            this.imageOpacity = Math.max(0, Math.min(100, op));
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            super.onDraw(c);
+            int w = getWidth(), h = getHeight();
+            if (w <= 0 || h <= 0) return;
+
+            int bg = prefs.getInt("bg_color",   0xFF1A1A2E);
+            int keyCol = prefs.getInt("key_color", 0xFF252545);
+            int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+            int accent = prefs.getInt("accent_color", 0xFF00E5FF);
+
+            // Container background (always paint the theme colour so the
+            // preview tracks the rest of the editor even when no image is
+            // chosen).
+            bgPaint.setColor(bg);
+            c.drawRect(0, 0, w, h, bgPaint);
+
+            if (image != null) {
+                imagePaint.setAlpha((int) Math.round(imageOpacity / 100.0 * 255));
+                // Center-crop draw: scale the bitmap so it covers the preview,
+                // matching how the IME will scale it on the keyboard.
+                float scale = Math.max((float) w / image.getWidth(),
+                        (float) h / image.getHeight());
+                float dw = image.getWidth() * scale;
+                float dh = image.getHeight() * scale;
+                float dx = (w - dw) / 2f;
+                float dy = (h - dh) / 2f;
+                RectF dest = new RectF(dx, dy, dx + dw, dy + dh);
+                c.drawBitmap(image, null, dest, imagePaint);
+            }
+
+            // ── Skeleton overlay ───────────────────────────────────────────
+            float pad   = dp(6);
+            float gap   = dp(3);
+            // 6 horizontal slots: suggestion strip, then 4 key rows, then
+            // a bottom action row (space + enter).
+            float slotH = (h - pad * 2 - gap * 5) / 6f;
+            float radius = dp(4);
+
+            keyPaint.setColor(withAlpha(keyCol, 0xCC));
+            borderPaint.setColor(withAlpha(textCol, 0x55));
+            accentPaint.setColor(withAlpha(accent, 0xCC));
+
+            float y = pad;
+
+            // Row 0 — suggestion strip (3 chips).
+            drawChips(c, pad, y, w - pad, y + slotH, 3, radius, false);
+            y += slotH + gap;
+
+            // Rows 1..3 — letter rows. Row counts thin out slightly per row
+            // to mimic a real QWERTY layout (10 / 9 / 7).
+            int[] rowCounts = {10, 9, 7};
+            for (int i = 0; i < rowCounts.length; i++) {
+                drawChips(c, pad, y, w - pad, y + slotH, rowCounts[i], radius, false);
+                y += slotH + gap;
+            }
+
+            // Row 4 — symbols / numbers row (12 narrow keys).
+            drawChips(c, pad, y, w - pad, y + slotH, 12, radius, false);
+            y += slotH + gap;
+
+            // Row 5 — bottom action row: caps | space (wide) | enter (accent).
+            float left = pad;
+            float right = w - pad;
+            float bottom = y + slotH;
+            float capsW = (right - left) * 0.18f;
+            float enterW = (right - left) * 0.18f;
+            float spaceLeft = left + capsW + gap;
+            float spaceRight = right - enterW - gap;
+            c.drawRoundRect(new RectF(left, y, left + capsW, bottom), radius, radius, keyPaint);
+            c.drawRoundRect(new RectF(left, y, left + capsW, bottom), radius, radius, borderPaint);
+            c.drawRoundRect(new RectF(spaceLeft, y, spaceRight, bottom), radius, radius, keyPaint);
+            c.drawRoundRect(new RectF(spaceLeft, y, spaceRight, bottom), radius, radius, borderPaint);
+            c.drawRoundRect(new RectF(spaceRight + gap, y, right, bottom), radius, radius, accentPaint);
+            c.drawRoundRect(new RectF(spaceRight + gap, y, right, bottom), radius, radius, borderPaint);
+        }
+
+        /**
+         * Lays {@code count} equal-width rounded chips between the given X
+         * bounds. Used for both the suggestion strip and individual key rows.
+         */
+        private void drawChips(Canvas c, float left, float top, float right, float bottom,
+                               int count, float radius, boolean accentFill) {
+            if (count <= 0) return;
+            float gap = dp(2);
+            float total = right - left;
+            float slotW = (total - gap * (count - 1)) / count;
+            for (int i = 0; i < count; i++) {
+                float x = left + i * (slotW + gap);
+                RectF r = new RectF(x, top, x + slotW, bottom);
+                c.drawRoundRect(r, radius, radius, accentFill ? accentPaint : keyPaint);
+                c.drawRoundRect(r, radius, radius, borderPaint);
+            }
+        }
+
+        private int withAlpha(int color, int alpha) {
+            return (color & 0x00FFFFFF) | ((alpha & 0xFF) << 24);
+        }
+    }
+
+    /**
+     * One colour row: swatch + label + edit button. Tapping any of those opens
+     * a small hex / preset chooser dialog. Persists straight into prefs and
+     * re-renders the panel so the swatch updates.
+     */
+    private LinearLayout buildColorRow(String label, final String prefKey, int currentColor) {
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        int bg      = prefs.getInt("bg_color",   0xFF1A1A2E);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(8), dp(14), dp(8));
+        row.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rlp.setMargins(0, 0, 0, dp(2));
+        row.setLayoutParams(rlp);
+
+        View swatch = new View(this);
+        swatch.setBackgroundColor(currentColor);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(28), dp(28));
+        slp.setMargins(0, 0, dp(10), 0);
+        swatch.setLayoutParams(slp);
+        row.addView(swatch);
+
+        TextView name = new TextView(this);
+        name.setText(label);
+        name.setTextSize(13f);
+        name.setTextColor(textCol);
+        name.setLayoutParams(new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(name);
+
+        TextView hex = new TextView(this);
+        hex.setText("#" + String.format("%06X", 0xFFFFFF & currentColor).toUpperCase());
+        hex.setTextSize(11f);
+        hex.setTextColor(dim(textCol));
+        hex.setPadding(dp(8), 0, dp(8), 0);
+        row.addView(hex);
+
+        View.OnClickListener open = v -> showColorPickerDialog(label, prefKey);
+        row.setOnClickListener(open);
+        swatch.setOnClickListener(open);
+        return row;
+    }
+
+    /**
+     * Lightweight colour picker — shows a grid of common palette options plus
+     * a hex input field. Avoids pulling in a third-party color-picker
+     * dependency. Saves to {@code prefKey} and re-renders the theme panel.
+     */
+    private void showColorPickerDialog(String title, final String prefKey) {
+        final int[] palette = {
+            0xFF000000, 0xFF1A1A2E, 0xFF252545, 0xFF272822, 0xFF282A36,
+            0xFF002B36, 0xFF1E1E1E, 0xFFFFFFFF, 0xFFF5F5F5, 0xFFE8E8FF,
+            0xFFD4D4D4, 0xFFCCFFCC, 0xFF222222, 0xFF00E5FF, 0xFF00FF88,
+            0xFFE6DB74, 0xFFBD93F9, 0xFF2AA198, 0xFF44FF44, 0xFF569CD6,
+            0xFF1565C0, 0xFFFF6666, 0xFFFFC107, 0xFFE91E63, 0xFF9C27B0,
+            0xFF673AB7, 0xFF3F51B5, 0xFF03A9F4, 0xFF009688, 0xFF4CAF50
+        };
+
+        LinearLayout outer = buildThemedDialogPanel("Choose " + title,
+                "Pick a swatch or enter a hex colour.");
+
+        // Hex input — themed rounded edit
+        final EditText hexInput = buildThemedSingleLineEditText("#RRGGBB",
+                "#" + String.format("%06X", 0xFFFFFF & prefs.getInt(prefKey, 0xFF000000)));
+        outer.addView(hexInput);
+
+        // Swatch grid (6 columns)
+        LinearLayout grid = new LinearLayout(this);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        grid.setPadding(0, dp(12), 0, 0);
+        LinearLayout currentRow = null;
+        for (int i = 0; i < palette.length; i++) {
+            if (i % 6 == 0) {
+                currentRow = new LinearLayout(this);
+                currentRow.setOrientation(LinearLayout.HORIZONTAL);
+                grid.addView(currentRow);
+            }
+            final int c = palette[i];
+            View sw = new View(this);
+            // Round the swatches so they line up with the rest of the themed UI.
+            android.graphics.drawable.GradientDrawable swBg = new android.graphics.drawable.GradientDrawable();
+            swBg.setColor(c);
+            swBg.setCornerRadius(dp(8));
+            swBg.setStroke(dp(1), 0x33FFFFFF);
+            sw.setBackground(swBg);
+            LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(40), dp(40));
+            slp.setMargins(dp(3), dp(3), dp(3), dp(3));
+            sw.setLayoutParams(slp);
+            sw.setOnClickListener(v ->
+                    hexInput.setText("#" + String.format("%06X", 0xFFFFFF & c)));
+            currentRow.addView(sw);
+        }
+        outer.addView(grid);
+
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setView(wrapInScroll(outer))
+                .setPositiveButton("Apply", (d, w) -> {
+                    String s = hexInput.getText().toString().trim();
+                    if (s.startsWith("#")) s = s.substring(1);
+                    try {
+                        long parsed = Long.parseLong(s, 16);
+                        // If user entered #RRGGBB, force opaque alpha.
+                        if (s.length() == 6) parsed |= 0xFF000000L;
+                        prefs.edit().putInt(prefKey, (int) parsed).apply();
+                        renderThemes();
+                    } catch (NumberFormatException ex) {
+                        Toast.makeText(this, "Invalid hex colour", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .create();
+        showThemedDialog(dlg);
     }
 
     // ─── Language buttons (built-ins + custom) ────────────────────────────────
@@ -1191,22 +2033,24 @@ public class SettingsActivity extends AppCompatActivity {
      */
     private void showSnippetEditor(final String lang) {
         final List<String[]> snippets = new ArrayList<>(loadCustomSnippets(lang));
-        final ScrollView scroll = new ScrollView(this);
+        LinearLayout panel = buildThemedDialogPanel("Snippets — " + lang,
+                "Tap Add snippet to extend this language; trigger words expand " +
+                "into the saved text when typed.");
+        // renderSnippetList wipes its container, so use a nested holder so
+        // the panel's header/subtitle survive refresh().
         final LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
-        list.setPadding(dp(16), dp(12), dp(16), dp(12));
-        scroll.addView(list);
+        panel.addView(list);
 
         final Runnable refresh = () -> renderSnippetList(list, lang, snippets);
         refresh.run();
 
         AlertDialog dlg = new AlertDialog.Builder(this)
-                .setTitle("Snippets — " + lang)
-                .setView(scroll)
+                .setView(wrapInScroll(list))
                 .setPositiveButton("Add snippet", null)
                 .setNegativeButton("Done", null)
                 .create();
-        dlg.show();
+        showThemedDialog(dlg);
 
         // Override the positive button so it doesn't auto-dismiss on Add.
         dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v ->
@@ -1298,34 +2142,21 @@ public class SettingsActivity extends AppCompatActivity {
      */
     private void showAddOrEditSnippet(final String lang, final String[] existing,
                                       final Runnable onSaved) {
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.VERTICAL);
-        container.setPadding(dp(16), dp(8), dp(16), dp(8));
+        LinearLayout container = buildThemedDialogPanel(
+                existing == null ? "Add snippet" : "Edit snippet",
+                "Trigger words expand into the saved text when typed.");
 
-        final EditText trigger = new EditText(this);
-        trigger.setHint("Trigger (e.g. fn)");
-        trigger.setSingleLine(true);
-        trigger.setInputType(InputType.TYPE_CLASS_TEXT);
-        if (existing != null) trigger.setText(existing[0]);
+        final EditText trigger = buildThemedSingleLineEditText("Trigger (e.g. fn)",
+                existing != null ? existing[0] : null);
         container.addView(trigger);
 
-        final EditText expansion = new EditText(this);
-        expansion.setHint("Expansion (multi-line allowed)");
-        expansion.setMinLines(3);
-        expansion.setGravity(Gravity.TOP | Gravity.START);
-        expansion.setInputType(InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        if (existing != null) expansion.setText(existing[1]);
-        LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        elp.topMargin = dp(10);
-        expansion.setLayoutParams(elp);
+        final EditText expansion = buildThemedMultilineEditText(
+                "Expansion (multi-line allowed)",
+                existing != null ? existing[1] : null, 3);
         container.addView(expansion);
 
-        new AlertDialog.Builder(this)
-                .setTitle(existing == null ? "Add snippet" : "Edit snippet")
-                .setView(container)
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setView(wrapInScroll(container))
                 .setPositiveButton("Save", (d, w) -> {
                     String t = trigger.getText().toString().trim();
                     String ex = expansion.getText().toString();
@@ -1367,7 +2198,8 @@ public class SettingsActivity extends AppCompatActivity {
                     if (onSaved != null) onSaved.run();
                 })
                 .setNegativeButton("Cancel", null)
-                .show();
+                .create();
+        showThemedDialog(dlg);
     }
 
     /** Loads the user's custom snippets for {@code lang} (see IME for format). */

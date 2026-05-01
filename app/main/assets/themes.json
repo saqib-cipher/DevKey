@@ -1,0 +1,13 @@
+{
+  "_comment": "CodeKeys built-in theme palette. Each theme: name, dark flag, and the four colours the IME pulls at runtime (bg/key/text/accent). Add or edit entries here to ship new presets without rebuilding code; the SettingsActivity reads this file on launch and falls back to its hardcoded list only if the file is missing or malformed.",
+  "themes": [
+    { "name": "Dark Blue",       "dark": true,  "bg_color": "#1A1A2E", "key_color": "#252545", "text_color": "#E8E8FF", "accent_color": "#00E5FF" },
+    { "name": "AMOLED Black",    "dark": true,  "bg_color": "#000000", "key_color": "#111111", "text_color": "#FFFFFF", "accent_color": "#00FF88" },
+    { "name": "Monokai",         "dark": true,  "bg_color": "#272822", "key_color": "#3E3D32", "text_color": "#F8F8F2", "accent_color": "#E6DB74" },
+    { "name": "Dracula",         "dark": true,  "bg_color": "#282A36", "key_color": "#44475A", "text_color": "#F8F8F2", "accent_color": "#BD93F9" },
+    { "name": "Solarized Dark",  "dark": true,  "bg_color": "#002B36", "key_color": "#073642", "text_color": "#839496", "accent_color": "#2AA198" },
+    { "name": "Deep Green",      "dark": true,  "bg_color": "#0D1F0D", "key_color": "#1A3A1A", "text_color": "#CCFFCC", "accent_color": "#44FF44" },
+    { "name": "VS Code Dark",    "dark": true,  "bg_color": "#1E1E1E", "key_color": "#2D2D2D", "text_color": "#D4D4D4", "accent_color": "#569CD6" },
+    { "name": "Light",           "dark": false, "bg_color": "#F5F5F5", "key_color": "#FFFFFF", "text_color": "#222222", "accent_color": "#1565C0" }
+  ]
+}
