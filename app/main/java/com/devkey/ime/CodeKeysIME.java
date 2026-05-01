@@ -122,6 +122,7 @@ public class CodeKeysIME extends InputMethodService {
     // Views — top-level
     private View keyboardView;
     private LinearLayout rowSuggestions;
+    private HorizontalScrollView suggestionScroll;
     private FrameLayout panelContainer;
     private LinearLayout rowPcKeys;
     private HorizontalScrollView pcKeysScroll;
@@ -362,13 +363,15 @@ public class CodeKeysIME extends InputMethodService {
     @Override
     public View onCreateInputView() {
         keyboardView = LayoutInflater.from(this).inflate(R.layout.keyboard_main, null);
-        rowSuggestions = keyboardView.findViewById(R.id.row_suggestions);
-        panelContainer = keyboardView.findViewById(R.id.panel_container);
-        rowPcKeys      = keyboardView.findViewById(R.id.row_pc_keys);
-        pcKeysScroll   = keyboardView.findViewById(R.id.pc_keys_scroll);
+        rowSuggestions   = keyboardView.findViewById(R.id.row_suggestions);
+        suggestionScroll = keyboardView.findViewById(R.id.suggestion_scroll);
+        panelContainer   = keyboardView.findViewById(R.id.panel_container);
+        rowPcKeys        = keyboardView.findViewById(R.id.row_pc_keys);
+        pcKeysScroll     = keyboardView.findViewById(R.id.pc_keys_scroll);
 
         bindBottomActionRow();
         buildPcKeysRow();
+        applySuggestionVisibility();
 
         // Reset cached panel views so new theme/scale settings are applied to
         // freshly-inflated children.
@@ -392,12 +395,25 @@ public class CodeKeysIME extends InputMethodService {
         pendingClipChips.clear();
         if (keyboardView != null) {
             buildPcKeysRow();
+            applySuggestionVisibility();
             updateEnterButton(info);
             switchPanel(PanelMode.KEYBOARD);
             applyTheme();
             refreshHistoryButtonsState();
             refreshArrowButtonsState();
         }
+    }
+
+    /**
+     * Hides the entire suggestion strip (header bar) when the user has turned
+     * off "Show Suggestions" in settings. Setting visibility to GONE collapses
+     * the row out of the layout instead of leaving an empty band, which is
+     * what users expect from "remove" rather than "hide".
+     */
+    private void applySuggestionVisibility() {
+        if (suggestionScroll == null) return;
+        boolean show = prefs.getBoolean("show_suggestions", true);
+        suggestionScroll.setVisibility(show ? View.VISIBLE : View.GONE);
     }
 
     @Override
@@ -770,6 +786,13 @@ public class CodeKeysIME extends InputMethodService {
     // ─── Suggestions strip (M3 chips) ────────────────────────────────────────
     private void refreshSuggestions() {
         if (rowSuggestions == null) return;
+        // When the user turned off "Show Suggestions" we skip building chips
+        // entirely — the parent scroll view is already GONE so layout space
+        // is reclaimed; this just avoids wasted work on every key press.
+        if (!prefs.getBoolean("show_suggestions", true)) {
+            rowSuggestions.removeAllViews();
+            return;
+        }
         rowSuggestions.removeAllViews();
         String word = inputEngine.currentWord();
         currentSuggestions = suggestionEngine.compute(word, effectiveSnippets());
@@ -1312,7 +1335,47 @@ public class CodeKeysIME extends InputMethodService {
         boolean dark   = prefs.getBoolean("dark", true);
         int bgColor  = prefs.getInt("bg_color", dark ? 0xFF1A1A2E : 0xFFF0F0F0);
         if (amoled) bgColor = 0xFF000000;
-        keyboardView.setBackgroundColor(bgColor);
+
+        // Custom background image: the user picked an image in Settings and
+        // (optionally) tuned an opacity in the skeleton preview. Falls back
+        // to the flat colour fill if the image can't be loaded for any reason.
+        String bgUri = prefs.getString("custom_bg_image_uri", null);
+        boolean applied = false;
+        if (!amoled && !TextUtils.isEmpty(bgUri)) {
+            try {
+                android.net.Uri uri = android.net.Uri.parse(bgUri);
+                java.io.InputStream in = getContentResolver().openInputStream(uri);
+                if (in != null) {
+                    android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeStream(in);
+                    in.close();
+                    if (bmp != null) {
+                        android.graphics.drawable.BitmapDrawable bd =
+                                new android.graphics.drawable.BitmapDrawable(getResources(), bmp);
+                        bd.setGravity(Gravity.CENTER);
+                        // Opacity stored as 0..100 in prefs; default 70%.
+                        int op = Math.max(0, Math.min(100,
+                                prefs.getInt("custom_bg_image_opacity", 70)));
+                        // 0..255; we keep a minimum of ~25 so the image is
+                        // never completely invisible when the user picked one.
+                        int alpha = (int) Math.round(op / 100.0 * 255);
+                        bd.setAlpha(alpha);
+                        // Layer the bg colour underneath so the image's
+                        // transparent / letterboxed areas inherit the theme.
+                        android.graphics.drawable.LayerDrawable layered =
+                                new android.graphics.drawable.LayerDrawable(
+                                        new android.graphics.drawable.Drawable[]{
+                                                new android.graphics.drawable.ColorDrawable(bgColor),
+                                                bd
+                                        });
+                        keyboardView.setBackground(layered);
+                        applied = true;
+                    }
+                }
+            } catch (Exception ignored) { /* fall through to flat colour */ }
+        }
+        if (!applied) {
+            keyboardView.setBackgroundColor(bgColor);
+        }
         applyActionRowTheme();
     }
 
