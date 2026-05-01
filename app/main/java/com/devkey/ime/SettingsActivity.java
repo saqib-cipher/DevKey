@@ -705,6 +705,359 @@ public class SettingsActivity extends AppCompatActivity {
 
         preferencesContainer.addView(buildKeyboardHeightSelector(textCol, bg, accent));
         preferencesContainer.addView(buildKeySoundVolumeSelector(textCol, bg, accent));
+
+        // ── Appearance customisation ─────────────────────────────────────
+        preferencesContainer.addView(buildSectionHeader("Appearance", textCol));
+        preferencesContainer.addView(buildIntStepSelector(
+                "Key Corner Radius",
+                "How rounded each key looks. 0 = sharp, 20 = pill.",
+                "key_radius_dp", 12,
+                new int[]{0, 4, 8, 12, 16, 20, 28},
+                textCol, bg, accent));
+        preferencesContainer.addView(buildIntStepSelector(
+                "Key Text Size",
+                "Label size on letter / symbol keys (sp).",
+                "key_text_size_sp", 14,
+                new int[]{10, 12, 14, 16, 18, 20, 22},
+                textCol, bg, accent));
+        preferencesContainer.addView(buildIntStepSelector(
+                "Key Border Width",
+                "Stroke around each key. 0 hides the border.",
+                "key_stroke_width_dp", 0,
+                new int[]{0, 1, 2, 3, 4},
+                textCol, bg, accent));
+        preferencesContainer.addView(buildColorSelector(
+                "Key Border Color",
+                "Color of the stroke when border width > 0.",
+                "key_stroke_color", 0x00000000,
+                new int[]{0x00000000, 0x66FFFFFF, 0xFF888888, 0xFF000000, accent},
+                new String[]{"Off", "Soft", "Gray", "Black", "Accent"},
+                textCol, bg, accent));
+        preferencesContainer.addView(buildColorSelector(
+                "Key Color",
+                "Override the per-theme key surface color.",
+                "key_color",
+                prefs.getInt("key_color", 0xFF252545),
+                new int[]{0xFF252545, 0xFF111111, 0xFF333333, 0xFF1565C0, 0xFFFFFFFF},
+                new String[]{"Default", "Black", "Charcoal", "Blue", "White"},
+                textCol, bg, accent));
+
+        // ── Keyboard background ─────────────────────────────────────────
+        preferencesContainer.addView(buildSectionHeader("Keyboard Background", textCol));
+        preferencesContainer.addView(buildBackgroundModeSelector(textCol, bg, accent));
+        String mode = prefs.getString("kb_bg_mode", "solid");
+        if ("gradient".equals(mode)) {
+            preferencesContainer.addView(buildColorSelector(
+                    "Gradient Top",
+                    "Top color of the keyboard gradient.",
+                    "kb_bg_gradient_start",
+                    prefs.getInt("kb_bg_gradient_start", bg),
+                    new int[]{0xFF1A1A2E, 0xFF000000, 0xFF1565C0, 0xFF6A1B9A, 0xFF263238, 0xFFE91E63},
+                    new String[]{"Navy", "Black", "Blue", "Purple", "Slate", "Pink"},
+                    textCol, bg, accent));
+            preferencesContainer.addView(buildColorSelector(
+                    "Gradient Bottom",
+                    "Bottom color of the keyboard gradient.",
+                    "kb_bg_gradient_end",
+                    prefs.getInt("kb_bg_gradient_end", 0xFF000000),
+                    new int[]{0xFF000000, 0xFF1A1A2E, 0xFF263238, 0xFF311B92, 0xFFB71C1C, 0xFF1B5E20},
+                    new String[]{"Black", "Navy", "Slate", "Indigo", "Red", "Green"},
+                    textCol, bg, accent));
+        } else if ("image".equals(mode)) {
+            preferencesContainer.addView(buildBackgroundImagePicker(textCol, bg, accent));
+        }
+    }
+
+    private TextView buildSectionHeader(String label, int textCol) {
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextSize(11f);
+        tv.setTextColor(textCol);
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        tv.setPadding(dp(4), dp(14), dp(4), dp(6));
+        return tv;
+    }
+
+    /**
+     * Generic preset-button selector for an integer preference. Each option
+     * shows the int value as its label; whichever is currently active gets
+     * the accent highlight.
+     */
+    private View buildIntStepSelector(String label, String desc, final String key,
+                                      final int def, final int[] values,
+                                      int textCol, int bg, int accent) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
+        card.setPadding(dp(16), dp(12), dp(16), dp(14));
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        clp.setMargins(0, dp(2), 0, dp(2));
+        card.setLayoutParams(clp);
+
+        TextView lv = new TextView(this);
+        lv.setText(label);
+        lv.setTextSize(15f);
+        lv.setTextColor(textCol);
+        card.addView(lv);
+
+        TextView dv = new TextView(this);
+        dv.setText(desc);
+        dv.setTextSize(11f);
+        dv.setTextColor(dim(textCol));
+        dv.setPadding(0, 0, 0, dp(8));
+        card.addView(dv);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+
+        int current = prefs.getInt(key, def);
+        for (final int v : values) {
+            boolean sel = current == v;
+            Button b = new Button(this);
+            b.setText(String.valueOf(v));
+            b.setAllCaps(false);
+            b.setTextSize(12f);
+            b.setTextColor(sel ? accent : textCol);
+            b.setBackgroundColor(sel ? blend(bg, accent, 0.22f) : blend(bg, 0xFFFFFFFF, 0.05f));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            lp.setMargins(2, 0, 2, 0);
+            b.setLayoutParams(lp);
+            b.setOnClickListener(view -> {
+                prefs.edit().putInt(key, v).apply();
+                renderPreferences();
+            });
+            row.addView(b);
+        }
+        card.addView(row);
+        return card;
+    }
+
+    /**
+     * Preset color picker — each option is a labelled swatch. Stores the
+     * chosen ARGB int under {@code key}.
+     */
+    private View buildColorSelector(String label, String desc, final String key,
+                                    int defValue,
+                                    final int[] colors, final String[] names,
+                                    int textCol, int bg, int accent) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
+        card.setPadding(dp(16), dp(12), dp(16), dp(14));
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        clp.setMargins(0, dp(2), 0, dp(2));
+        card.setLayoutParams(clp);
+
+        TextView lv = new TextView(this);
+        lv.setText(label);
+        lv.setTextSize(15f);
+        lv.setTextColor(textCol);
+        card.addView(lv);
+
+        TextView dv = new TextView(this);
+        dv.setText(desc);
+        dv.setTextSize(11f);
+        dv.setTextColor(dim(textCol));
+        dv.setPadding(0, 0, 0, dp(8));
+        card.addView(dv);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+
+        int current = prefs.getInt(key, defValue);
+        for (int i = 0; i < colors.length; i++) {
+            final int color = colors[i];
+            boolean sel = current == color;
+
+            LinearLayout cell = new LinearLayout(this);
+            cell.setOrientation(LinearLayout.VERTICAL);
+            cell.setGravity(Gravity.CENTER);
+            cell.setBackgroundColor(sel ? blend(bg, accent, 0.22f) : blend(bg, 0xFFFFFFFF, 0.05f));
+            cell.setPadding(dp(2), dp(6), dp(2), dp(6));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+            lp.setMargins(2, 0, 2, 0);
+            cell.setLayoutParams(lp);
+
+            View swatch = new View(this);
+            // For fully-transparent colors, paint a tiny checkered hint so the
+            // user knows this means "no color".
+            swatch.setBackgroundColor((color >>> 24) == 0 ? 0x33FFFFFF : color);
+            LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(22), dp(14));
+            swatch.setLayoutParams(slp);
+            cell.addView(swatch);
+
+            TextView name = new TextView(this);
+            name.setText(names[i]);
+            name.setTextSize(10f);
+            name.setTextColor(sel ? accent : textCol);
+            name.setGravity(Gravity.CENTER);
+            cell.addView(name);
+
+            cell.setOnClickListener(view -> {
+                prefs.edit().putInt(key, color).apply();
+                renderPreferences();
+            });
+            row.addView(cell);
+        }
+        card.addView(row);
+        return card;
+    }
+
+    /**
+     * Three-button selector for the keyboard background mode (solid / gradient
+     * / image). Re-renders the section so the mode-specific sub-controls
+     * appear / disappear immediately.
+     */
+    private View buildBackgroundModeSelector(int textCol, int bg, int accent) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
+        card.setPadding(dp(16), dp(12), dp(16), dp(14));
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        clp.setMargins(0, dp(2), 0, dp(2));
+        card.setLayoutParams(clp);
+
+        TextView lv = new TextView(this);
+        lv.setText("Background Mode");
+        lv.setTextSize(15f);
+        lv.setTextColor(textCol);
+        card.addView(lv);
+
+        TextView dv = new TextView(this);
+        dv.setText("Solid uses the theme color. Gradient blends two colors. Image lets you pick a wallpaper.");
+        dv.setTextSize(11f);
+        dv.setTextColor(dim(textCol));
+        dv.setPadding(0, 0, 0, dp(8));
+        card.addView(dv);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+
+        final String[] modes = {"solid", "gradient", "image"};
+        final String[] names = {"Solid", "Gradient", "Image"};
+        String current = prefs.getString("kb_bg_mode", "solid");
+        for (int i = 0; i < modes.length; i++) {
+            final String mode = modes[i];
+            boolean sel = mode.equals(current);
+            Button b = new Button(this);
+            b.setText(names[i]);
+            b.setAllCaps(false);
+            b.setTextSize(12f);
+            b.setTextColor(sel ? accent : textCol);
+            b.setBackgroundColor(sel ? blend(bg, accent, 0.22f) : blend(bg, 0xFFFFFFFF, 0.05f));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            lp.setMargins(2, 0, 2, 0);
+            b.setLayoutParams(lp);
+            b.setOnClickListener(v -> {
+                prefs.edit().putString("kb_bg_mode", mode).apply();
+                renderPreferences();
+            });
+            row.addView(b);
+        }
+        card.addView(row);
+        return card;
+    }
+
+    /** Pick / clear a custom keyboard background image. */
+    private View buildBackgroundImagePicker(int textCol, int bg, int accent) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
+        card.setPadding(dp(16), dp(12), dp(16), dp(14));
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        clp.setMargins(0, dp(2), 0, dp(2));
+        card.setLayoutParams(clp);
+
+        TextView lv = new TextView(this);
+        lv.setText("Background Image");
+        lv.setTextSize(15f);
+        lv.setTextColor(textCol);
+        card.addView(lv);
+
+        String uri = prefs.getString("kb_bg_image_uri", "");
+        TextView dv = new TextView(this);
+        dv.setText(TextUtils.isEmpty(uri)
+                ? "No image selected. Tap Pick to choose one."
+                : "Current: " + uri);
+        dv.setTextSize(11f);
+        dv.setTextColor(dim(textCol));
+        dv.setPadding(0, 0, 0, dp(8));
+        card.addView(dv);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+
+        Button pick = new Button(this);
+        pick.setText("Pick image");
+        pick.setAllCaps(false);
+        pick.setTextSize(12f);
+        pick.setTextColor(accent);
+        pick.setBackgroundColor(blend(bg, accent, 0.18f));
+        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+        plp.setMargins(2, 0, 2, 0);
+        pick.setLayoutParams(plp);
+        pick.setOnClickListener(v -> launchBackgroundImagePicker());
+        row.addView(pick);
+
+        Button clear = new Button(this);
+        clear.setText("Clear");
+        clear.setAllCaps(false);
+        clear.setTextSize(12f);
+        clear.setTextColor(0xFFFF6666);
+        clear.setBackgroundColor(0x22FF0000);
+        LinearLayout.LayoutParams clp2 = new LinearLayout.LayoutParams(0, dp(40), 1f);
+        clp2.setMargins(2, 0, 2, 0);
+        clear.setLayoutParams(clp2);
+        clear.setOnClickListener(v -> {
+            prefs.edit().remove("kb_bg_image_uri").apply();
+            renderPreferences();
+        });
+        row.addView(clear);
+
+        card.addView(row);
+        return card;
+    }
+
+    /** Request code for the keyboard background image picker. */
+    private static final int REQ_PICK_BG_IMAGE = 1042;
+
+    private void launchBackgroundImagePicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        // Persistable URI so we can read the file from the IME process later.
+        intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, REQ_PICK_BG_IMAGE);
+        } catch (Exception e) {
+            Toast.makeText(this, "No file picker available on this device.",
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_PICK_BG_IMAGE
+                && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            android.net.Uri uri = data.getData();
+            // Take a persistable read permission so the IME service can re-open
+            // the same URI on later launches.
+            try {
+                getContentResolver().takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (Exception ignored) {}
+            prefs.edit()
+                    .putString("kb_bg_image_uri", uri.toString())
+                    .putString("kb_bg_mode", "image")
+                    .apply();
+            renderPreferences();
+        }
     }
 
     /**
