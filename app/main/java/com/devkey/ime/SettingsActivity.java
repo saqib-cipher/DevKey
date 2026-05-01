@@ -59,6 +59,14 @@ public class SettingsActivity extends AppCompatActivity {
     /** SharedPreferences key under which custom language names are stored. */
     private static final String PREF_CUSTOM_LANGS = "custom_langs";
 
+    /**
+     * minSdk-21-safe stand-in for {@code java.util.function.IntConsumer}.
+     * Used by the colour picker to funnel palette / hex / slider updates
+     * through a single preview renderer without pulling in the API 24+
+     * functional types.
+     */
+    private interface ColorPreviewSink { void accept(int color); }
+
     /** SharedPreferences keys for the custom background image. The URI key is
      *  shared with the canonical "kb_bg_image_uri" pref read by the IME so the
      *  skeleton-preview dialog and the rest of the app stay in sync. */
@@ -1387,6 +1395,12 @@ public class SettingsActivity extends AppCompatActivity {
                 // Stroke colour is derived from the preset's accent so the
                 // outline reads as part of the same palette when stroke width
                 // is bumped up later.
+                //
+                // Crucially, ALL other surface-related prefs (gradient colours,
+                // background image, image opacity, background mode) are wiped
+                // here so a preset is exactly what its swatches advertise — no
+                // leftover gradient or wallpaper hangs around from the user's
+                // previous custom session.
                 prefs.edit()
                         .putString("theme_kind",   "preset")
                         .putInt("bg_color",        theme[0])
@@ -1399,6 +1413,15 @@ public class SettingsActivity extends AppCompatActivity {
                         .putInt("key_stroke_color", theme[3] & 0x80FFFFFF)
                         .putBoolean("dark",        isDark)
                         .putBoolean("amoled", theme[0] == 0xFF000000)
+                        // Reset background to a clean solid surface so the
+                        // selected preset is fully applied with no stale state.
+                        .putString("kb_bg_mode",   "solid")
+                        .remove("kb_bg_gradient_start")
+                        .remove("kb_bg_gradient_end")
+                        .remove("kb_bg_gradient_dir")
+                        .remove("kb_bg_image_uri")
+                        .remove("kb_bg_image_fit")
+                        .remove(PREF_BG_IMAGE_OPACITY)
                         .apply();
                 Toast.makeText(this,
                         name + " applied — restart keyboard to see changes",
@@ -1931,7 +1954,12 @@ public class SettingsActivity extends AppCompatActivity {
         row.addView(name);
 
         TextView hex = new TextView(this);
-        hex.setText("#" + String.format("%06X", 0xFFFFFF & currentColor).toUpperCase());
+        // Show the alpha byte too so semi-transparent colours don't look the
+        // same as their opaque cousins in the row preview.
+        int alpha = (currentColor >>> 24) & 0xFF;
+        hex.setText(alpha == 0xFF
+                ? "#" + String.format("%06X", 0xFFFFFF & currentColor)
+                : "#" + String.format("%08X", currentColor));
         hex.setTextSize(11f);
         hex.setTextColor(dim(textCol));
         hex.setPadding(dp(8), 0, dp(8), 0);
@@ -1947,6 +1975,11 @@ public class SettingsActivity extends AppCompatActivity {
      * Lightweight colour picker — shows a grid of common palette options plus
      * a hex input field. Avoids pulling in a third-party color-picker
      * dependency. Saves to {@code prefKey} and re-renders the theme panel.
+     *
+     * <p>Supports both opaque {@code #RRGGBB} and alpha-aware {@code #AARRGGBB}
+     * hex values, with a transparency slider beneath the input and a live
+     * preview swatch that tracks edits in real time so the user can see the
+     * exact colour (and alpha) they're about to commit.
      */
     private void showColorPickerDialog(String title, final String prefKey) {
         final int[] palette = {
@@ -1955,16 +1988,118 @@ public class SettingsActivity extends AppCompatActivity {
             0xFFD4D4D4, 0xFFCCFFCC, 0xFF222222, 0xFF00E5FF, 0xFF00FF88,
             0xFFE6DB74, 0xFFBD93F9, 0xFF2AA198, 0xFF44FF44, 0xFF569CD6,
             0xFF1565C0, 0xFFFF6666, 0xFFFFC107, 0xFFE91E63, 0xFF9C27B0,
-            0xFF673AB7, 0xFF3F51B5, 0xFF03A9F4, 0xFF009688, 0xFF4CAF50
+            0xFF673AB7, 0xFF3F51B5, 0xFF03A9F4, 0xFF009688, 0xFF4CAF50,
+            // Transparent slot so users can clear semi-overlay colours.
+            0x00000000
         };
 
-        LinearLayout outer = buildThemedDialogPanel("Choose " + title,
-                "Pick a swatch or enter a hex colour.");
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        int accent  = prefs.getInt("accent_color", 0xFF00E5FF);
 
-        // Hex input — themed rounded edit
-        final EditText hexInput = buildThemedSingleLineEditText("#RRGGBB",
-                "#" + String.format("%06X", 0xFFFFFF & prefs.getInt(prefKey, 0xFF000000)));
+        LinearLayout outer = buildThemedDialogPanel("Choose " + title,
+                "Pick a swatch, enter a hex colour, or use the alpha slider. "
+                        + "Use #AARRGGBB to type alpha by hand.");
+
+        // ── Live preview row ────────────────────────────────────────────
+        // A single rounded swatch that updates on every keystroke / palette
+        // tap / alpha change so the user can see the exact colour they will
+        // commit before pressing Apply.
+        final LinearLayout previewRow = new LinearLayout(this);
+        previewRow.setOrientation(LinearLayout.HORIZONTAL);
+        previewRow.setGravity(Gravity.CENTER_VERTICAL);
+        previewRow.setPadding(0, 0, 0, dp(8));
+
+        final View previewSwatch = new View(this);
+        LinearLayout.LayoutParams pswLp = new LinearLayout.LayoutParams(dp(48), dp(48));
+        pswLp.setMargins(0, 0, dp(12), 0);
+        previewSwatch.setLayoutParams(pswLp);
+
+        final TextView previewLabel = new TextView(this);
+        previewLabel.setTextSize(12f);
+        previewLabel.setTextColor(dim(textCol));
+        previewLabel.setLayoutParams(new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        previewRow.addView(previewSwatch);
+        previewRow.addView(previewLabel);
+        outer.addView(previewRow);
+
+        // ── Hex input + alpha slider ────────────────────────────────────
+        final int initialColor = prefs.getInt(prefKey, 0xFF000000);
+        final EditText hexInput = buildThemedSingleLineEditText("#AARRGGBB or #RRGGBB",
+                "#" + String.format("%08X", initialColor));
         outer.addView(hexInput);
+
+        // Alpha slider: 0 (fully transparent) → 255 (fully opaque).
+        TextView alphaLabel = new TextView(this);
+        alphaLabel.setTextSize(11f);
+        alphaLabel.setTextColor(dim(textCol));
+        alphaLabel.setPadding(0, dp(8), 0, 0);
+        outer.addView(alphaLabel);
+
+        final SeekBar alphaBar = new SeekBar(this);
+        alphaBar.setMax(255);
+        alphaBar.setProgress((initialColor >>> 24) & 0xFF);
+        outer.addView(alphaBar);
+
+        // Holder for the most recently parsed colour. Apply uses this so we
+        // never apply a partially-typed (and unparseable) hex value.
+        final int[] currentColor = { initialColor };
+
+        // Refreshes the preview swatch + alpha label given a parsed colour.
+        // Centralised here so palette taps, hex edits, and slider drags all
+        // funnel through the same renderer. Uses a small inner interface
+        // instead of java.util.function.IntConsumer so we stay compatible
+        // with minSdk 21 (the standard Java 8 functional types are API 24+).
+        final ColorPreviewSink applyPreview = c -> {
+            currentColor[0] = c;
+            android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+            bg.setColor(c);
+            bg.setCornerRadius(dp(10));
+            bg.setStroke(dp(1), 0x55FFFFFF);
+            previewSwatch.setBackground(bg);
+            int a = (c >>> 24) & 0xFF;
+            previewLabel.setText("#" + String.format("%08X", c) + "   ·   alpha "
+                    + Math.round(a * 100f / 255f) + "%");
+            int pct = Math.round(a * 100f / 255f);
+            alphaLabel.setText("Alpha: " + pct + "%  (" + a + "/255)");
+        };
+        applyPreview.accept(initialColor);
+
+        // Hex → preview: re-parse on every keystroke. Invalid input is just
+        // ignored (the previous valid colour stays in the preview), so the
+        // user can type freely without the slider jumping around.
+        hexInput.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                Integer parsed = parseHexColor(s.toString());
+                if (parsed == null) return;
+                int c = parsed;
+                applyPreview.accept(c);
+                int a = (c >>> 24) & 0xFF;
+                if (alphaBar.getProgress() != a) {
+                    alphaBar.setProgress(a);
+                }
+            }
+        });
+
+        // Slider → preview + hex: keep RGB but swap the alpha byte.
+        alphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                if (!fromUser) return;
+                int rgb = currentColor[0] & 0x00FFFFFF;
+                int c = (progress << 24) | rgb;
+                applyPreview.accept(c);
+                String newHex = "#" + String.format("%08X", c);
+                if (!newHex.equalsIgnoreCase(hexInput.getText().toString())) {
+                    hexInput.setText(newHex);
+                    hexInput.setSelection(newHex.length());
+                }
+            }
+            @Override public void onStartTrackingTouch(SeekBar s) {}
+            @Override public void onStopTrackingTouch(SeekBar s) {}
+        });
 
         // Swatch grid (6 columns)
         LinearLayout grid = new LinearLayout(this);
@@ -1981,15 +2116,20 @@ public class SettingsActivity extends AppCompatActivity {
             View sw = new View(this);
             // Round the swatches so they line up with the rest of the themed UI.
             android.graphics.drawable.GradientDrawable swBg = new android.graphics.drawable.GradientDrawable();
-            swBg.setColor(c);
+            // Transparent palette entry: draw a subtle outlined "off" swatch.
+            swBg.setColor(((c >>> 24) == 0) ? 0x22FFFFFF : c);
             swBg.setCornerRadius(dp(8));
-            swBg.setStroke(dp(1), 0x33FFFFFF);
+            swBg.setStroke(dp(1), ((c >>> 24) == 0) ? accent : 0x33FFFFFF);
             sw.setBackground(swBg);
             LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(40), dp(40));
             slp.setMargins(dp(3), dp(3), dp(3), dp(3));
             sw.setLayoutParams(slp);
-            sw.setOnClickListener(v ->
-                    hexInput.setText("#" + String.format("%06X", 0xFFFFFF & c)));
+            sw.setOnClickListener(v -> {
+                // Tapping a swatch fills the hex field; the TextWatcher above
+                // updates the preview + alpha slider, so this single line
+                // keeps every control synchronised.
+                hexInput.setText("#" + String.format("%08X", c));
+            });
             currentRow.addView(sw);
         }
         outer.addView(grid);
@@ -1997,21 +2137,55 @@ public class SettingsActivity extends AppCompatActivity {
         AlertDialog dlg = new AlertDialog.Builder(this)
                 .setView(wrapInScroll(outer))
                 .setPositiveButton("Apply", (d, w) -> {
-                    String s = hexInput.getText().toString().trim();
-                    if (s.startsWith("#")) s = s.substring(1);
-                    try {
-                        long parsed = Long.parseLong(s, 16);
-                        // If user entered #RRGGBB, force opaque alpha.
-                        if (s.length() == 6) parsed |= 0xFF000000L;
-                        prefs.edit().putInt(prefKey, (int) parsed).apply();
-                        renderThemes();
-                    } catch (NumberFormatException ex) {
+                    Integer parsed = parseHexColor(hexInput.getText().toString());
+                    if (parsed == null) {
                         Toast.makeText(this, "Invalid hex colour", Toast.LENGTH_SHORT).show();
+                        return;
                     }
+                    prefs.edit().putInt(prefKey, parsed).apply();
+                    renderThemes();
                 })
                 .setNegativeButton("Cancel", null)
                 .create();
         showThemedDialog(dlg);
+    }
+
+    /**
+     * Parses a 3 / 6 / 8-digit hex colour string (with or without leading
+     * {@code #}). Returns {@code null} if the input doesn't represent a valid
+     * colour so callers can keep the previous value.
+     *
+     * <ul>
+     *   <li>{@code RGB}      — short form, expanded to {@code RRGGBB}, opaque.</li>
+     *   <li>{@code RRGGBB}   — opaque colour ({@code FF} alpha forced).</li>
+     *   <li>{@code AARRGGBB} — full alpha-aware ARGB int.</li>
+     * </ul>
+     */
+    private static Integer parseHexColor(String input) {
+        if (input == null) return null;
+        String s = input.trim();
+        if (s.startsWith("#")) s = s.substring(1);
+        if (s.isEmpty()) return null;
+        try {
+            if (s.length() == 3) {
+                StringBuilder expanded = new StringBuilder("FF");
+                for (int i = 0; i < 3; i++) {
+                    char ch = s.charAt(i);
+                    expanded.append(ch).append(ch);
+                }
+                return (int) Long.parseLong(expanded.toString(), 16);
+            }
+            if (s.length() == 6) {
+                long v = Long.parseLong(s, 16);
+                return (int) (v | 0xFF000000L);
+            }
+            if (s.length() == 8) {
+                return (int) Long.parseLong(s, 16);
+            }
+            return null;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     // ─── Language buttons (built-ins + custom) ────────────────────────────────
@@ -2030,9 +2204,16 @@ public class SettingsActivity extends AppCompatActivity {
             btn.setTextSize(12f);
             btn.setTextColor(sel ? accent : textCol);
             btn.setBackgroundColor(sel ? blend(bg, accent, 0.22f) : blend(bg, 0xFFFFFFFF, 0.05f));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(44), 1f);
-            lp.setMargins(2, 0, 2, 0);
+            // Wrap_content width so each button is sized to its label — long
+            // names like "TYPESCRIPT" no longer get truncated and short ones
+            // ("C") don't waste space. Horizontal scrolling is provided by the
+            // surrounding HorizontalScrollView in settings_activity.xml.
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, dp(44));
+            lp.setMargins(dp(2), 0, dp(2), 0);
             btn.setLayoutParams(lp);
+            btn.setMinWidth(dp(56));
+            btn.setPadding(dp(14), 0, dp(14), 0);
             btn.setOnClickListener(v -> {
                 prefs.edit().putString("lang", lang).apply();
                 Toast.makeText(this, "Default: " + lang, Toast.LENGTH_SHORT).show();

@@ -12,6 +12,7 @@ import android.view.ViewGroup;
 import android.widget.ScrollView;
 import android.widget.Button;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -144,6 +145,16 @@ final class UIRenderer {
         TextView searchText = panelView.findViewById(R.id.emoji_search_text);
         ImageButton clearBtn = panelView.findViewById(R.id.emoji_search_clear);
         LinearLayout pill = panelView.findViewById(R.id.emoji_search_pill);
+        ImageView searchIcon = panelView.findViewById(R.id.emoji_search_icon);
+
+        // Search icon (magnifier) was rendered with the drawable's hardcoded
+        // black stroke, so on dark themes it disappeared into the pill. Tint
+        // it programmatically to match the active palette: accent-coloured
+        // while a query is active so it visually pairs with the live text,
+        // and a dimmed text-colour shade otherwise so it reads as a hint.
+        if (searchIcon != null) {
+            searchIcon.setColorFilter(engine.isSearching() ? accent : dim(textCol));
+        }
 
         // Pill: rounded surface a touch lighter than the panel background so
         // it reads as elevated. Becomes accent-tinted while a query is active.
