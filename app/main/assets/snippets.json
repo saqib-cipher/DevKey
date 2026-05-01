@@ -1,0 +1,52 @@
+{
+  "_comment": "CodeKeys built-in snippet shortcuts per language. The IME reads this file once at startup; if a user has saved custom snippets under custom_snip_<LANG> they take precedence. Use \\n for newlines and \\t for tab in expansions.",
+  "languages": {
+    "C": [
+      { "trigger": "if",    "expansion": "if () {\n\t\n}" },
+      { "trigger": "for",   "expansion": "for (int i = 0; i < n; i++) {\n\t\n}" },
+      { "trigger": "while", "expansion": "while () {\n\t\n}" },
+      { "trigger": "fn",    "expansion": "void functionName() {\n\t\n}" },
+      { "trigger": "inc",   "expansion": "#include <stdio.h>" },
+      { "trigger": "main",  "expansion": "int main() {\n\t\n\treturn 0;\n}" },
+      { "trigger": "pf",    "expansion": "printf(\"\");" },
+      { "trigger": "sf",    "expansion": "scanf(\"%d\", &x);" }
+    ],
+    "JAVA": [
+      { "trigger": "if",    "expansion": "if () {\n\t\n}" },
+      { "trigger": "for",   "expansion": "for (int i = 0; i < n; i++) {\n\t\n}" },
+      { "trigger": "forea", "expansion": "for (Object item : collection) {\n\t\n}" },
+      { "trigger": "while", "expansion": "while () {\n\t\n}" },
+      { "trigger": "class", "expansion": "public class ClassName {\n\t\n}" },
+      { "trigger": "fn",    "expansion": "public void methodName() {\n\t\n}" },
+      { "trigger": "sys",   "expansion": "System.out.println(\"\");" },
+      { "trigger": "try",   "expansion": "try {\n\t\n} catch (Exception e) {\n\te.printStackTrace();\n}" }
+    ],
+    "PYTHON": [
+      { "trigger": "if",    "expansion": "if :\n\t" },
+      { "trigger": "for",   "expansion": "for i in range():\n\t" },
+      { "trigger": "forin", "expansion": "for item in collection:\n\t" },
+      { "trigger": "while", "expansion": "while :\n\t" },
+      { "trigger": "def",   "expansion": "def function_name():\n\t" },
+      { "trigger": "class", "expansion": "class ClassName:\n\tdef __init__(self):\n\t\t" },
+      { "trigger": "print", "expansion": "print(\"\")" },
+      { "trigger": "imp",   "expansion": "import " }
+    ],
+    "JS": [
+      { "trigger": "if",    "expansion": "if () {\n\t\n}" },
+      { "trigger": "for",   "expansion": "for (let i = 0; i < n; i++) {\n\t\n}" },
+      { "trigger": "forea", "expansion": "array.forEach((item) => {\n\t\n});" },
+      { "trigger": "fn",    "expansion": "function name() {\n\t\n}" },
+      { "trigger": "arrow", "expansion": "const fn = () => {\n\t\n};" },
+      { "trigger": "const", "expansion": "const  = " },
+      { "trigger": "log",   "expansion": "console.log(\"\");" },
+      { "trigger": "prom",  "expansion": "new Promise((resolve, reject) => {\n\t\n});" }
+    ],
+    "GENERAL": [
+      { "trigger": "tab",   "expansion": "\t" },
+      { "trigger": "url",   "expansion": "https://" },
+      { "trigger": "todo",  "expansion": "// TODO: " },
+      { "trigger": "fixme", "expansion": "// FIXME: " },
+      { "trigger": "note",  "expansion": "// NOTE: " }
+    ]
+  }
+}

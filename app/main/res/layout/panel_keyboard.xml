@@ -7,6 +7,13 @@
     NOTE: All colors here are baseline fallbacks. The IME does NOT depend on
     Material theme — Java applies the user's accent / key colors at runtime.
     Row LinearLayouts are populated at runtime by `UIRenderer.makeKey(...)`.
+
+    Theme matching:
+      • The symbol toolbar and snippet shortcut strip use transparent
+        backgrounds so the user's keyboard theme bg shows through cleanly
+        instead of being broken up by an opaque gradient stripe.
+      • Row paddings reduced so the per-key margins set in code line up
+        flush with the QWERTY rows.
 -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -20,15 +27,15 @@
         android:layout_width="match_parent"
         android:layout_height="@dimen/row_symbol_height"
         android:scrollbars="none"
-        android:background="#141428">
+        android:background="@android:color/transparent">
 
         <LinearLayout
             android:id="@+id/row_symbols"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:orientation="horizontal"
-            android:paddingStart="4dp"
-            android:paddingEnd="4dp" />
+            android:paddingStart="2dp"
+            android:paddingEnd="2dp" />
     </HorizontalScrollView>
 
     <!-- Snippet shortcuts (scrollable, runtime-filled) -->
@@ -37,15 +44,15 @@
         android:layout_width="match_parent"
         android:layout_height="@dimen/row_snippet_height"
         android:scrollbars="none"
-        android:background="#0D0D1F">
+        android:background="@android:color/transparent">
 
         <LinearLayout
             android:id="@+id/row_snippets"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:orientation="horizontal"
-            android:paddingStart="4dp"
-            android:paddingEnd="4dp" />
+            android:paddingStart="2dp"
+            android:paddingEnd="2dp" />
     </HorizontalScrollView>
 
     <!-- Numbers (1–0) -->
@@ -75,7 +82,10 @@
         android:paddingStart="20dp"
         android:paddingEnd="20dp" />
 
-    <!-- Bottom letter row + caps + backspace -->
+    <!-- Bottom letter row + caps + backspace.
+         Both the shift and backspace keys use Tabler vector drawables so
+         they render crisply under any theme; the Java side recolours their
+         tint to track the active text/accent colour. -->
     <LinearLayout
         android:id="@+id/row_letters3_wrap"
         android:layout_width="match_parent"
@@ -84,16 +94,16 @@
         android:paddingStart="2dp"
         android:paddingEnd="2dp">
 
-        <Button
+        <ImageButton
             android:id="@+id/btn_caps"
             android:layout_width="@dimen/key_special_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
-            android:text="⇧"
-            android:textSize="16sp"
-            android:textColor="#E8E8FF"
+            android:src="@drawable/arrow_big_up"
+            android:scaleType="fitCenter"
+            android:padding="9dp"
             android:background="#252545"
-            android:padding="2dp" />
+            android:contentDescription="Shift" />
 
         <LinearLayout
             android:id="@+id/row_letters3"
@@ -102,15 +112,15 @@
             android:layout_weight="1"
             android:orientation="horizontal" />
 
-        <Button
+        <ImageButton
             android:id="@+id/btn_backspace"
             android:layout_width="@dimen/key_backspace_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
-            android:text="⌫"
-            android:textSize="16sp"
-            android:textColor="#E8E8FF"
+            android:src="@drawable/backspace"
+            android:scaleType="fitCenter"
+            android:padding="10dp"
             android:background="#252545"
-            android:padding="2dp" />
+            android:contentDescription="Backspace" />
     </LinearLayout>
 </LinearLayout>

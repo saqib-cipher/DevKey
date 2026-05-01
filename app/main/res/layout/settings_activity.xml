@@ -201,6 +201,17 @@
             android:layout_height="wrap_content"
             android:orientation="vertical" />
 
+        <!-- Custom theme customisation: only visible when the user has
+             selected the Custom theme entry. Colour rows are rendered at
+             runtime by SettingsActivity#renderCustomThemePanel. -->
+        <LinearLayout
+            android:id="@+id/custom_theme_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:layout_marginTop="6dp" />
+
         <!-- ══════════════════════════════════════════════════════
              DEFAULT LANGUAGE MODE
         ══════════════════════════════════════════════════════ -->

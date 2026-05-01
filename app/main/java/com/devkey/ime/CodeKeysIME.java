@@ -1,5 +1,7 @@
 package com.codekeys.ime;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -37,7 +39,10 @@ import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * CodeKeysIME — coding-focused soft keyboard.
@@ -93,6 +98,27 @@ public class CodeKeysIME extends InputMethodService {
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private int activeMetaState = 0;
 
+    // ─── Clipboard surfacing ──────────────────────────────────────────────────
+    /**
+     * Chips queued to ride at the head of the suggestion row. Populated whenever
+     * the system clipboard changes (new copy detected) — the full clip plus any
+     * extracted links / numbers / emails appear as separate chips. Cleared when
+     * the user taps any chip or when the keyboard rebinds to a fresh editor.
+     */
+    private final List<String> pendingClipChips = new ArrayList<>();
+    private ClipboardManager systemClipboard;
+    private ClipboardManager.OnPrimaryClipChangedListener clipListener;
+    /** Tracks the last clip text we saw to dedupe duplicate change events. */
+    private String lastSeenClipText = null;
+
+    // Patterns used to break a clip into sub-chips (URL / number / email).
+    private static final Pattern URL_PATTERN =
+            Pattern.compile("\\b((?:https?://|www\\.)[\\w.-]+(?:/[\\w./?=&%#-]*)?)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NUMBER_PATTERN =
+            Pattern.compile("[+]?\\d[\\d ()-]{2,}\\d|\\b\\d+(?:\\.\\d+)?\\b");
+    private static final Pattern EMAIL_PATTERN =
+            Pattern.compile("[\\w.+-]+@[\\w-]+\\.[\\w.-]+");
+
     // Views — top-level
     private View keyboardView;
     private LinearLayout rowSuggestions;
@@ -106,16 +132,18 @@ public class CodeKeysIME extends InputMethodService {
     private View clipboardPanelView;
 
     // Bottom action row
-    private Button btnEnter, btnSettings, btnSymbolsPanel, btnEmoji, btnSpace;
-    private Button btnUndo, btnRedo;
-    // Arrow keys are ImageButtons in keyboard_main.xml — kept as ImageButton so
-    // the inflated views cast cleanly. We never call Button-specific APIs on them.
+    private Button btnEnter, btnSpace;
+    // The remaining action-row buttons are ImageButtons (Tabler vector icons)
+    // — kept as ImageButton so findViewById casts cleanly. The IME tints them
+    // at runtime to track the active theme's text/accent colours.
+    private ImageButton btnSettings, btnSymbolsPanel, btnEmoji;
+    private ImageButton btnUndo, btnRedo;
     private ImageButton btnArrowLeft, btnArrowRight, btnArrowUp, btnArrowDown;
 
     // Keyboard panel children (cached when the panel is built)
     private LinearLayout rowSymbols, rowSnippets, rowNumbers;
     private LinearLayout rowLetters1, rowLetters2, rowLetters3;
-    private Button btnCaps, btnBackspace;
+    private ImageButton btnCaps, btnBackspace;
 
     /** Modifier buttons inside the PC keys row, kept so we can refresh state. */
     private final HashMap<Integer, Button> modifierButtons = new HashMap<>();
@@ -195,11 +223,16 @@ public class CodeKeysIME extends InputMethodService {
         AUTO_CLOSE.put("<", ">");
     }
 
-    /** Symbol panel (?123) layout, rows of strings to render in three rows. */
+    /**
+     * Symbol panel (?123) layout — rendered into the existing letter rows.
+     * The number row (1..0) is intentionally OMITTED here because the keyboard
+     * already shows the dedicated `row_numbers` strip permanently above the
+     * letters; doubling them up wasted vertical space and confused users.
+     */
     private static final String[][] SYMBOL_PANEL = {
-        {"1","2","3","4","5","6","7","8","9","0"},
+        {"~","`","|","\\","{","}","[","]","<",">"},
         {"@","#","$","_","&","-","+","(",")","/"},
-        {"*","\"","'",":",";","!","?","<",">","="}
+        {"*","\"","'",":",";","!","?",",",".","="}
     };
 
     /** PC keyboard row contents — see original notes preserved in git history. */
@@ -218,6 +251,13 @@ public class CodeKeysIME extends InputMethodService {
     public void onCreate() {
         super.onCreate();
         prefs = getSharedPreferences("codekeys_prefs", MODE_PRIVATE);
+        // Seed prefs with defaults shipped in assets/settings_defaults.json
+        // before reading lang/etc. — safe on every launch (only fills in
+        // keys the user has never set).
+        AssetDefaults.seedDefaults(this, prefs);
+        // Hot-load snippets/symbols from assets (overrides hardcoded
+        // defaults when the JSON is present and well-formed).
+        loadAssetOverrides();
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
         audio    = (AudioManager) getSystemService(AUDIO_SERVICE);
         currentLang = prefs.getString("lang", "GENERAL");
@@ -226,6 +266,97 @@ public class CodeKeysIME extends InputMethodService {
         emojiEngine      = new EmojiEngine(prefs);
         clipboardStore   = new ClipboardStore(prefs);
         ui               = new UIRenderer(this);
+        registerClipboardListener();
+    }
+
+    @Override
+    public void onDestroy() {
+        if (systemClipboard != null && clipListener != null) {
+            try { systemClipboard.removePrimaryClipChangedListener(clipListener); } catch (Throwable ignored) {}
+        }
+        super.onDestroy();
+    }
+
+    /**
+     * Replaces the in-memory snippet / symbol maps with the contents of the
+     * matching JSON asset files when they're available. Falls back silently
+     * to the hardcoded {@link #LANG_SNIPPETS} / {@link #LANG_SYMBOLS} entries
+     * when an asset is missing, so the keyboard still boots cleanly even if a
+     * user-supplied JSON is broken.
+     */
+    private void loadAssetOverrides() {
+        java.util.Map<String, java.util.List<String[]>> snip = AssetDefaults.loadSnippets(this);
+        if (snip != null && !snip.isEmpty()) {
+            for (java.util.Map.Entry<String, java.util.List<String[]>> e : snip.entrySet()) {
+                java.util.List<String[]> rows = e.getValue();
+                LANG_SNIPPETS.put(e.getKey(), rows.toArray(new String[0][]));
+            }
+        }
+        java.util.Map<String, String[]> syms = AssetDefaults.loadLangSymbols(this);
+        if (syms != null && !syms.isEmpty()) {
+            LANG_SYMBOLS.putAll(syms);
+        }
+    }
+
+    /**
+     * Subscribes to system clipboard changes so we can surface freshly-copied
+     * content as chips at the head of the suggestion row. Also persists the
+     * clip into our own clipboard history so the clipboard panel stays
+     * consistent.
+     */
+    private void registerClipboardListener() {
+        try {
+            systemClipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (systemClipboard == null) return;
+            clipListener = () -> {
+                ClipData data = systemClipboard.getPrimaryClip();
+                if (data == null || data.getItemCount() == 0) return;
+                CharSequence cs = data.getItemAt(0).coerceToText(this);
+                if (cs == null) return;
+                String text = cs.toString().trim();
+                if (TextUtils.isEmpty(text)) return;
+                if (text.equals(lastSeenClipText)) return;
+                lastSeenClipText = text;
+                clipboardStore.add(text);
+                buildPendingClipChips(text);
+                if (panelMode == PanelMode.KEYBOARD || panelMode == PanelMode.SYMBOLS) {
+                    uiHandler.post(this::refreshSuggestions);
+                }
+            };
+            systemClipboard.addPrimaryClipChangedListener(clipListener);
+        } catch (Throwable ignored) { /* defensive: some emulators block this */ }
+    }
+
+    /**
+     * Splits a freshly-copied clip into chip candidates: the trimmed full clip
+     * first, then any URLs, emails, and numeric tokens we can extract. Order
+     * preserved & deduped. Long clips are abbreviated for the chip label only.
+     */
+    private void buildPendingClipChips(String text) {
+        pendingClipChips.clear();
+        if (TextUtils.isEmpty(text)) return;
+        LinkedHashSet<String> set = new LinkedHashSet<>();
+        // Always include full clip first (truncated label-side, full when applied).
+        set.add(text);
+        addMatches(set, URL_PATTERN, text);
+        addMatches(set, EMAIL_PATTERN, text);
+        addMatches(set, NUMBER_PATTERN, text);
+        int max = 6;
+        for (String s : set) {
+            if (pendingClipChips.size() >= max) break;
+            pendingClipChips.add(s);
+        }
+    }
+
+    private void addMatches(LinkedHashSet<String> bag, Pattern p, String haystack) {
+        Matcher m = p.matcher(haystack);
+        while (m.find()) {
+            String hit = m.group();
+            if (hit != null) {
+                hit = hit.trim();
+                if (hit.length() >= 2) bag.add(hit);
+            }
+        }
     }
 
     @Override
@@ -257,6 +388,8 @@ public class CodeKeysIME extends InputMethodService {
         emojiEngine.clearSearch();
         undoableOps = 0;
         redoableOps = 0;
+        // Stale clipboard chips from a previous editor shouldn't ride over.
+        pendingClipChips.clear();
         if (keyboardView != null) {
             buildPcKeysRow();
             updateEnterButton(info);
@@ -413,7 +546,11 @@ public class CodeKeysIME extends InputMethodService {
     }
 
     private void fillSymbolsLayout() {
-        rowNumbers.setVisibility(View.GONE);
+        // Keep the dedicated number row visible in symbols mode — the user
+        // wants 1..0 always available, and the SYMBOL_PANEL no longer
+        // duplicates them in its first row (see SYMBOL_PANEL constant).
+        rowNumbers.setVisibility(View.VISIBLE);
+        buildNumberRow();
         rowSymbols.removeAllViews();
         rowSnippets.removeAllViews();
         rowLetters1.removeAllViews();
@@ -640,18 +777,40 @@ public class CodeKeysIME extends InputMethodService {
         int accent = getAccentColor();
         int chipBg = blend(getKeyBgColor(), 0xFF000000, 0.18f);
         int bestBg = blend(chipBg, accent, 0.45f);
+        int clipBg = blend(chipBg, accent, 0.6f);
+
+        // Clipboard chips ride at the head of the row so the freshly-copied
+        // content is one tap away. Each link / number / email parsed out of
+        // the clip becomes its own chip beside the full clip.
+        if (!pendingClipChips.isEmpty()) {
+            for (final String clip : pendingClipChips) {
+                String label = clip.length() > 28 ? clip.substring(0, 28) + "…" : clip;
+                Button chip = ui.makeChip("📋 " + label, clipBg, textCol, true);
+                chip.setOnClickListener(v -> {
+                    haptic(v);
+                    inputEngine.commit(clip);
+                    pendingClipChips.clear();
+                    refreshSuggestions();
+                    noteOperation();
+                });
+                rowSuggestions.addView(chip);
+            }
+        }
 
         if (currentSuggestions.isEmpty()) {
-            TextView empty = new TextView(this);
-            empty.setText("·");
-            empty.setTextSize(14f);
-            empty.setTextColor(dim(textCol));
-            empty.setGravity(Gravity.CENTER_VERTICAL);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
-            lp.setMargins(dp(8), 0, 0, 0);
-            empty.setLayoutParams(lp);
-            rowSuggestions.addView(empty);
+            // Skip the bullet placeholder when clipboard chips are already showing.
+            if (pendingClipChips.isEmpty()) {
+                TextView empty = new TextView(this);
+                empty.setText("·");
+                empty.setTextSize(14f);
+                empty.setTextColor(dim(textCol));
+                empty.setGravity(Gravity.CENTER_VERTICAL);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
+                lp.setMargins(dp(8), 0, 0, 0);
+                empty.setLayoutParams(lp);
+                rowSuggestions.addView(empty);
+            }
             return;
         }
 
@@ -692,20 +851,21 @@ public class CodeKeysIME extends InputMethodService {
         if (btnCaps == null) return;
         int accent = getAccentColor();
         int keyBg = getKeyBgColor();
+        int textCol = getKeyTextColor();
         switch (capsState) {
             case CAPS_OFF:
-                btnCaps.setText("⇧");
-                btnCaps.setTextColor(getKeyTextColor());
+                btnCaps.setImageResource(R.drawable.arrow_big_up);
+                btnCaps.setColorFilter(textCol);
                 btnCaps.setBackground(ui.roundedFill(keyBg, dp(10)));
                 break;
             case CAPS_SINGLE:
-                btnCaps.setText("⇧");
-                btnCaps.setTextColor(accent);
+                btnCaps.setImageResource(R.drawable.arrow_big_up);
+                btnCaps.setColorFilter(accent);
                 btnCaps.setBackground(ui.roundedFill(blend(keyBg, accent, 0.35f), dp(10)));
                 break;
             case CAPS_LOCKED:
-                btnCaps.setText("⇪");
-                btnCaps.setTextColor(0xFF000000);
+                btnCaps.setImageResource(R.drawable.capslock);
+                btnCaps.setColorFilter(0xFF000000);
                 btnCaps.setBackground(ui.roundedFill(accent, dp(10)));
                 break;
         }
@@ -755,11 +915,10 @@ public class CodeKeysIME extends InputMethodService {
             int action = ev.getAction();
             if (action == MotionEvent.ACTION_DOWN) {
                 haptic(v);
-                if (panelMode == PanelMode.EMOJI && emojiEngine.isSearching()) {
-                    emojiEngine.popSearchChar();
-                    refreshEmojiPanel();
-                    return true;
-                }
+                // The main-keyboard backspace ALWAYS targets the host
+                // EditText. Removing characters from the emoji search query
+                // is exclusively the job of `emoji_search_clear` on the
+                // emoji panel, so panel state doesn't affect this gesture.
                 startTime[0] = System.currentTimeMillis();
                 downX[0] = ev.getX();
                 wordsDeletedDuringSwipe[0] = 0;
@@ -927,23 +1086,32 @@ public class CodeKeysIME extends InputMethodService {
 
     private void updateEnterButton(EditorInfo ei) {
         if (btnEnter == null) return;
-        String label = "↵";
+        String label = null;
         int action = (ei != null) ? (ei.imeOptions & EditorInfo.IME_MASK_ACTION) : 0;
         boolean noEnterAction = (ei != null) && ((ei.imeOptions & EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0);
         boolean isMultiline = (ei != null) && ((ei.inputType & android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0);
         if (!noEnterAction && !isMultiline) {
             switch (action) {
-                case EditorInfo.IME_ACTION_GO:       label = "Go";       break;
-                case EditorInfo.IME_ACTION_NEXT:     label = "Next";     break;
-                case EditorInfo.IME_ACTION_PREVIOUS: label = "Prev";     break;
-                case EditorInfo.IME_ACTION_DONE:     label = "Done";     break;
-                case EditorInfo.IME_ACTION_SEARCH:   label = "🔍";        break;
-                case EditorInfo.IME_ACTION_SEND:     label = "Send";     break;
+                case EditorInfo.IME_ACTION_GO:       label = "Go";   break;
+                case EditorInfo.IME_ACTION_NEXT:     label = "Next"; break;
+                case EditorInfo.IME_ACTION_PREVIOUS: label = "Prev"; break;
+                case EditorInfo.IME_ACTION_DONE:     label = "Done"; break;
+                case EditorInfo.IME_ACTION_SEARCH:   label = "Search"; break;
+                case EditorInfo.IME_ACTION_SEND:     label = "Send"; break;
                 default: break;
             }
         }
-        btnEnter.setText(label);
-        btnEnter.setTextSize(label.length() > 1 ? 12f : 16f);
+        if (label == null) {
+            // Default → use the corner-down-left vector icon.
+            applyEnterIcon(getAccentColor());
+        } else {
+            btnEnter.setCompoundDrawables(null, null, null, null);
+            btnEnter.setCompoundDrawablesRelative(null, null, null, null);
+            btnEnter.setPadding(0, 0, 0, 0);
+            btnEnter.setGravity(Gravity.CENTER);
+            btnEnter.setText(label);
+            btnEnter.setTextSize(label.length() > 3 ? 12f : 14f);
+        }
     }
 
     // ─── Key preview popup ────────────────────────────────────────────────────
@@ -1145,6 +1313,72 @@ public class CodeKeysIME extends InputMethodService {
         int bgColor  = prefs.getInt("bg_color", dark ? 0xFF1A1A2E : 0xFFF0F0F0);
         if (amoled) bgColor = 0xFF000000;
         keyboardView.setBackgroundColor(bgColor);
+        applyActionRowTheme();
+    }
+
+    /**
+     * Repaints every persistent action-row button so the icons + surfaces
+     * track the active theme. Sub-panels (the suggestion strip, symbols
+     * toolbar, snippet strip) are deliberately transparent in XML so the
+     * keyboard's bg color shows through; only the actual key surfaces get
+     * their own rounded fill.
+     */
+    private void applyActionRowTheme() {
+        int keyBg  = getKeyBgColor();
+        int textCol = getKeyTextColor();
+        int accent = getAccentColor();
+
+        tintIconButton(btnSettings, keyBg, accent);
+        tintIconButton(btnSymbolsPanel, keyBg, panelMode == PanelMode.SYMBOLS ? accent : textCol);
+        tintIconButton(btnEmoji, keyBg, panelMode == PanelMode.EMOJI ? accent : textCol);
+        tintIconButton(btnUndo, keyBg, textCol);
+        tintIconButton(btnRedo, keyBg, textCol);
+        tintIconButton(btnArrowLeft, keyBg, textCol);
+        tintIconButton(btnArrowRight, keyBg, textCol);
+        tintIconButton(btnArrowUp, keyBg, textCol);
+        tintIconButton(btnArrowDown, keyBg, textCol);
+
+        if (btnSpace != null) {
+            btnSpace.setTextColor(textCol);
+            btnSpace.setBackground(ui.roundedFill(keyBg, dp(12)));
+        }
+        if (btnEnter != null) {
+            btnEnter.setTextColor(accent);
+            btnEnter.setBackground(ui.roundedFill(keyBg, dp(12)));
+            // Default state shows the corner-down-left icon; refreshed by
+            // updateEnterButton when an IME action label needs to take its place.
+            CharSequence existing = btnEnter.getText();
+            if (existing == null || existing.length() == 0 || "↵".contentEquals(existing)) {
+                applyEnterIcon(accent);
+            }
+        }
+    }
+
+    /** Applies background + tint to the given action-row ImageButton. */
+    private void tintIconButton(ImageButton btn, int keyBg, int tintColor) {
+        if (btn == null) return;
+        btn.setBackground(ui.roundedFill(keyBg, dp(12)));
+        btn.setColorFilter(tintColor);
+    }
+
+    /** Replaces the enter-button label with the corner-down-left vector icon. */
+    private void applyEnterIcon(int tint) {
+        if (btnEnter == null) return;
+        btnEnter.setText("");
+        android.graphics.drawable.Drawable d =
+                getResources().getDrawable(R.drawable.corner_down_left, null);
+        if (d != null) {
+            int size = dp(20);
+            d.setBounds(0, 0, size, size);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                d.setTint(tint);
+            }
+            btnEnter.setCompoundDrawables(null, null, null, null);
+            btnEnter.setCompoundDrawablesRelative(d, null, null, null);
+            btnEnter.setCompoundDrawablePadding(0);
+            btnEnter.setGravity(Gravity.CENTER);
+            btnEnter.setPadding(dp(14), 0, 0, 0);
+        }
     }
 
     /** Returns the user-configured key-height multiplier, clamped to a sensible band. */

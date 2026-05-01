@@ -17,6 +17,14 @@
         (keyboard / emoji / clipboard / symbols) is swapped inside this
         container instead of rebuilding the whole keyboard each time.
       • Bottom action row — caps/space/enter/arrows/etc., always visible.
+
+    Theme matching:
+      • Sub-rows use transparent backgrounds so the user's chosen theme
+        bg_color shows through uniformly across suggestion / symbols /
+        snippet / number rows.
+      • Action-row buttons use Tabler-style drawable icons (tinted at
+        runtime to the user's text/accent colors) instead of glyphs so
+        the look stays crisp at every theme.
     ──────────────────────────────────────────────────────────────────────────
 -->
 <LinearLayout
@@ -31,13 +39,14 @@
     android:paddingEnd="4dp"
     android:background="#1A1A2E">
 
-    <!-- Suggestion strip (autocomplete chips, runtime-filled) -->
+    <!-- Suggestion strip (autocomplete chips, runtime-filled).
+         Transparent bg so the keyboard theme is visible underneath. -->
     <HorizontalScrollView
         android:id="@+id/suggestion_scroll"
         android:layout_width="match_parent"
         android:layout_height="@dimen/row_suggestion_height"
         android:scrollbars="none"
-        android:background="#141428">
+        android:background="@android:color/transparent">
 
         <LinearLayout
             android:id="@+id/row_suggestions"
@@ -45,8 +54,8 @@
             android:layout_height="match_parent"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp" />
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp" />
     </HorizontalScrollView>
 
     <!-- Optional PC keys row (Esc/Tab/Ctrl/etc.) — toggled by settings -->
@@ -55,7 +64,7 @@
         android:layout_width="match_parent"
         android:layout_height="@dimen/row_pc_keys_height"
         android:scrollbars="none"
-        android:background="#0F0F22"
+        android:background="@android:color/transparent"
         android:visibility="gone">
 
         <LinearLayout
@@ -87,38 +96,40 @@
         android:gravity="center_vertical">
 
         <!-- Settings / Language popup trigger -->
-        <Button
+        <ImageButton
             android:id="@+id/btn_settings"
             android:layout_width="@dimen/key_action_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
-            android:text="⚙"
-            android:textSize="16sp"
-            android:textColor="#00E5FF"
+            android:src="@drawable/settings-2"
+            android:scaleType="fitCenter"
+            android:padding="10dp"
             android:background="#252545"
-            android:padding="0dp" />
+            android:contentDescription="Settings" />
 
-        <!-- Symbols panel toggle (?123) -->
-        <Button
+        <!-- Symbols panel toggle (?123 — math symbols icon) -->
+        <ImageButton
             android:id="@+id/btn_symbols_panel"
             android:layout_width="@dimen/key_action_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
-            android:text="#123"
-            android:textSize="11sp"
-            android:textColor="#E8E8FF"
-            android:background="#252545" />
+            android:src="@drawable/math_symbols"
+            android:scaleType="fitCenter"
+            android:padding="10dp"
+            android:background="#252545"
+            android:contentDescription="Symbols" />
 
         <!-- Emoji panel -->
-        <Button
+        <ImageButton
             android:id="@+id/btn_emoji"
             android:layout_width="@dimen/key_action_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
-            android:text="☺"
-            android:textSize="16sp"
-            android:textColor="#E8E8FF"
-            android:background="#252545" />
+            android:src="@drawable/mood_smile"
+            android:scaleType="fitCenter"
+            android:padding="9dp"
+            android:background="#252545"
+            android:contentDescription="Emoji" />
 
         <!-- Undo -->
         <ImageButton
@@ -126,8 +137,11 @@
             android:layout_width="@dimen/key_undo_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
-            android:src="@drawable/arrow_forward"
-            android:background="#252545" />
+            android:src="@drawable/arrow_back_up"
+            android:scaleType="fitCenter"
+            android:padding="8dp"
+            android:background="#252545"
+            android:contentDescription="Undo" />
 
         <!-- Space (largest weight so it dominates the row) -->
         <Button
@@ -147,8 +161,11 @@
             android:layout_width="@dimen/key_undo_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
-            android:src="@drawable/arrow-back"
-            android:background="#252545" />
+            android:src="@drawable/arrow_forward_up"
+            android:scaleType="fitCenter"
+            android:padding="8dp"
+            android:background="#252545"
+            android:contentDescription="Redo" />
 
         <!-- Arrow cluster (vertical: up/down) -->
         <LinearLayout
@@ -206,15 +223,19 @@
                 android:scaleType="fitCenter" />
         </LinearLayout>
 
-        <!-- Enter / IME action -->
+        <!-- Enter / IME action (icon by default; switched to text label
+             at runtime when the active EditText specifies an IME action).
+             Stays a Button so the IME service can swap its label between
+             ↵ / Go / Done / Search / Send via setText(). -->
         <Button
             android:id="@+id/btn_enter"
             android:layout_width="@dimen/key_enter_width"
             android:layout_height="match_parent"
             android:layout_margin="@dimen/key_margin"
-            android:text="↵"
+            android:text=""
             android:textSize="14sp"
             android:textColor="#00E5FF"
+            android:textAllCaps="false"
             android:background="#252545"
             android:singleLine="true" />
     </LinearLayout>

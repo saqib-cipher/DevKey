@@ -58,6 +58,7 @@ public class SettingsActivity extends AppCompatActivity {
     private ScrollView root;
     private LinearLayout preferencesContainer;
     private LinearLayout themesContainer;
+    private LinearLayout customThemeContainer;
     private LinearLayout langButtonsRow;
     private LinearLayout customLangList;
     private LinearLayout snippetRefBox;
@@ -92,6 +93,11 @@ public class SettingsActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("codekeys_prefs", MODE_PRIVATE);
+        // Seed defaults from assets/settings_defaults.json on first launch.
+        AssetDefaults.seedDefaults(this, prefs);
+        // Pick up any themes shipped in assets/themes.json so the grid below
+        // reflects the latest palette without a code change.
+        loadAssetThemes();
         setContentView(R.layout.settings_activity);
         bindViews();
         applyTheme();
@@ -103,11 +109,35 @@ public class SettingsActivity extends AppCompatActivity {
         renderSnippetReference();
     }
 
+    /** Themes/names/dark flags loaded from assets/themes.json (else hardcoded fallback). */
+    private int[][] activeThemes = THEMES;
+    private String[] activeThemeNames = THEME_NAMES;
+    private boolean[] activeThemeIsDark = THEME_IS_DARK;
+
+    private void loadAssetThemes() {
+        java.util.List<AssetDefaults.Theme> themes = AssetDefaults.loadThemes(this);
+        if (themes == null || themes.isEmpty()) return;
+        int n = themes.size();
+        int[][] palette = new int[n][4];
+        String[] names = new String[n];
+        boolean[] dark = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            AssetDefaults.Theme t = themes.get(i);
+            palette[i] = new int[]{ t.bgColor, t.keyColor, t.textColor, t.accentColor };
+            names[i]   = t.name;
+            dark[i]    = t.dark;
+        }
+        activeThemes = palette;
+        activeThemeNames = names;
+        activeThemeIsDark = dark;
+    }
+
     // ─── View binding ─────────────────────────────────────────────────────────
     private void bindViews() {
         root                 = findViewById(R.id.settings_scroll);
         preferencesContainer = findViewById(R.id.preferences_container);
         themesContainer      = findViewById(R.id.themes_container);
+        customThemeContainer = findViewById(R.id.custom_theme_container);
         langButtonsRow       = findViewById(R.id.lang_buttons_row);
         customLangList       = findViewById(R.id.custom_lang_list);
         snippetRefBox        = findViewById(R.id.snippet_ref_box);
@@ -626,12 +656,13 @@ public class SettingsActivity extends AppCompatActivity {
     private void renderThemes() {
         themesContainer.removeAllViews();
         int currentBg = prefs.getInt("bg_color", 0xFF1A1A2E);
+        boolean customSelected = "custom".equals(prefs.getString("theme_kind", "preset"));
 
-        for (int i = 0; i < THEMES.length; i++) {
-            final int[] theme = THEMES[i];
-            final String name = THEME_NAMES[i];
-            final boolean isDark = THEME_IS_DARK[i];
-            boolean active = (currentBg == theme[0]);
+        for (int i = 0; i < activeThemes.length; i++) {
+            final int[] theme = activeThemes[i];
+            final String name = activeThemeNames[i];
+            final boolean isDark = activeThemeIsDark[i];
+            boolean active = !customSelected && (currentBg == theme[0]);
 
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
@@ -672,6 +703,7 @@ public class SettingsActivity extends AppCompatActivity {
 
             row.setOnClickListener(v -> {
                 prefs.edit()
+                        .putString("theme_kind", "preset")
                         .putInt("bg_color",     theme[0])
                         .putInt("key_color",    theme[1])
                         .putInt("text_color",   theme[2])
@@ -687,6 +719,229 @@ public class SettingsActivity extends AppCompatActivity {
 
             themesContainer.addView(row);
         }
+
+        // Custom theme entry (always last). Selecting it shows the colour
+        // pickers below; unselecting (by tapping any preset) hides them.
+        themesContainer.addView(buildCustomThemeRow(customSelected));
+        renderCustomThemePanel(customSelected);
+    }
+
+    /**
+     * Builds the "Custom" theme row that lives below the preset list. Tapping
+     * the row flips {@code theme_kind} to {@code custom} and reveals the
+     * colour-picker panel; the preset rows remain available so the user can
+     * jump back any time.
+     */
+    private LinearLayout buildCustomThemeRow(boolean active) {
+        int bg = prefs.getInt("bg_color", 0xFF1A1A2E);
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        int accent = prefs.getInt("accent_color", 0xFF00E5FF);
+        int keyCol = prefs.getInt("key_color", 0xFF252545);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackgroundColor(bg);
+        row.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rlp.setMargins(0, 0, 0, dp(3));
+        row.setLayoutParams(rlp);
+
+        int[] swatches = { bg, keyCol, textCol, accent };
+        for (int c : swatches) {
+            View s = new View(this);
+            s.setBackgroundColor(c);
+            LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(20), dp(20));
+            slp.setMargins(0, 0, dp(4), 0);
+            s.setLayoutParams(slp);
+            row.addView(s);
+        }
+
+        TextView nameView = new TextView(this);
+        nameView.setText("✎ Custom");
+        nameView.setTextSize(13f);
+        nameView.setTextColor(textCol);
+        nameView.setLayoutParams(new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        nameView.setPadding(dp(10), 0, 0, 0);
+        row.addView(nameView);
+
+        if (active) {
+            TextView check = new TextView(this);
+            check.setText("✓ active");
+            check.setTextSize(11f);
+            check.setTextColor(accent);
+            row.addView(check);
+        }
+
+        row.setOnClickListener(v -> {
+            prefs.edit().putString("theme_kind", "custom").apply();
+            renderThemes();
+        });
+        return row;
+    }
+
+    /**
+     * Renders the four colour-picker rows (background / key / text / accent)
+     * inside {@link #customThemeContainer}. Only visible when the user has
+     * selected the Custom theme entry — preset selections collapse it.
+     */
+    private void renderCustomThemePanel(boolean visible) {
+        if (customThemeContainer == null) return;
+        customThemeContainer.removeAllViews();
+        customThemeContainer.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (!visible) return;
+
+        int bg = prefs.getInt("bg_color", 0xFF1A1A2E);
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        int accent = prefs.getInt("accent_color", 0xFF00E5FF);
+        int keyCol = prefs.getInt("key_color", 0xFF252545);
+
+        // Border / heading
+        TextView hint = new TextView(this);
+        hint.setText("Tap a colour to edit. Long-press the background for dark/light hint.");
+        hint.setTextSize(11f);
+        hint.setTextColor(dim(textCol));
+        hint.setPadding(dp(14), dp(6), dp(14), dp(8));
+        customThemeContainer.addView(hint);
+
+        customThemeContainer.addView(buildColorRow("Background",   "bg_color",     bg));
+        customThemeContainer.addView(buildColorRow("Key surface",  "key_color",    keyCol));
+        customThemeContainer.addView(buildColorRow("Text",         "text_color",   textCol));
+        customThemeContainer.addView(buildColorRow("Accent",       "accent_color", accent));
+
+        // Dark/Light toggle row — drives the "dark" pref the IME uses for
+        // sundry contrast decisions.
+        Switch sw = new Switch(this);
+        sw.setText("Treat as dark theme");
+        sw.setTextColor(textCol);
+        sw.setChecked(prefs.getBoolean("dark", true));
+        sw.setPadding(dp(14), dp(6), dp(14), dp(6));
+        sw.setOnCheckedChangeListener((b, c) -> prefs.edit().putBoolean("dark", c).apply());
+        customThemeContainer.addView(sw);
+    }
+
+    /**
+     * One colour row: swatch + label + edit button. Tapping any of those opens
+     * a small hex / preset chooser dialog. Persists straight into prefs and
+     * re-renders the panel so the swatch updates.
+     */
+    private LinearLayout buildColorRow(String label, final String prefKey, int currentColor) {
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        int bg      = prefs.getInt("bg_color",   0xFF1A1A2E);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(8), dp(14), dp(8));
+        row.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rlp.setMargins(0, 0, 0, dp(2));
+        row.setLayoutParams(rlp);
+
+        View swatch = new View(this);
+        swatch.setBackgroundColor(currentColor);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(28), dp(28));
+        slp.setMargins(0, 0, dp(10), 0);
+        swatch.setLayoutParams(slp);
+        row.addView(swatch);
+
+        TextView name = new TextView(this);
+        name.setText(label);
+        name.setTextSize(13f);
+        name.setTextColor(textCol);
+        name.setLayoutParams(new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(name);
+
+        TextView hex = new TextView(this);
+        hex.setText("#" + String.format("%06X", 0xFFFFFF & currentColor).toUpperCase());
+        hex.setTextSize(11f);
+        hex.setTextColor(dim(textCol));
+        hex.setPadding(dp(8), 0, dp(8), 0);
+        row.addView(hex);
+
+        View.OnClickListener open = v -> showColorPickerDialog(label, prefKey);
+        row.setOnClickListener(open);
+        swatch.setOnClickListener(open);
+        return row;
+    }
+
+    /**
+     * Lightweight colour picker — shows a grid of common palette options plus
+     * a hex input field. Avoids pulling in a third-party color-picker
+     * dependency. Saves to {@code prefKey} and re-renders the theme panel.
+     */
+    private void showColorPickerDialog(String title, final String prefKey) {
+        final int[] palette = {
+            0xFF000000, 0xFF1A1A2E, 0xFF252545, 0xFF272822, 0xFF282A36,
+            0xFF002B36, 0xFF1E1E1E, 0xFFFFFFFF, 0xFFF5F5F5, 0xFFE8E8FF,
+            0xFFD4D4D4, 0xFFCCFFCC, 0xFF222222, 0xFF00E5FF, 0xFF00FF88,
+            0xFFE6DB74, 0xFFBD93F9, 0xFF2AA198, 0xFF44FF44, 0xFF569CD6,
+            0xFF1565C0, 0xFFFF6666, 0xFFFFC107, 0xFFE91E63, 0xFF9C27B0,
+            0xFF673AB7, 0xFF3F51B5, 0xFF03A9F4, 0xFF009688, 0xFF4CAF50
+        };
+
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
+        int bg      = prefs.getInt("bg_color",   0xFF1A1A2E);
+
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.VERTICAL);
+        outer.setPadding(dp(16), dp(16), dp(16), dp(16));
+        outer.setBackgroundColor(bg);
+
+        // Hex input
+        final EditText hexInput = new EditText(this);
+        hexInput.setHint("#RRGGBB");
+        hexInput.setTextColor(textCol);
+        hexInput.setHintTextColor(dim(textCol));
+        hexInput.setText("#" + String.format("%06X", 0xFFFFFF & prefs.getInt(prefKey, 0xFF000000)));
+        hexInput.setInputType(InputType.TYPE_CLASS_TEXT);
+        outer.addView(hexInput);
+
+        // Swatch grid (6 columns)
+        LinearLayout grid = new LinearLayout(this);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        grid.setPadding(0, dp(12), 0, 0);
+        LinearLayout currentRow = null;
+        for (int i = 0; i < palette.length; i++) {
+            if (i % 6 == 0) {
+                currentRow = new LinearLayout(this);
+                currentRow.setOrientation(LinearLayout.HORIZONTAL);
+                grid.addView(currentRow);
+            }
+            final int c = palette[i];
+            View sw = new View(this);
+            sw.setBackgroundColor(c);
+            LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(40), dp(40));
+            slp.setMargins(dp(3), dp(3), dp(3), dp(3));
+            sw.setLayoutParams(slp);
+            sw.setOnClickListener(v ->
+                    hexInput.setText("#" + String.format("%06X", 0xFFFFFF & c)));
+            currentRow.addView(sw);
+        }
+        outer.addView(grid);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Choose " + title)
+                .setView(outer)
+                .setPositiveButton("Apply", (d, w) -> {
+                    String s = hexInput.getText().toString().trim();
+                    if (s.startsWith("#")) s = s.substring(1);
+                    try {
+                        long parsed = Long.parseLong(s, 16);
+                        // If user entered #RRGGBB, force opaque alpha.
+                        if (s.length() == 6) parsed |= 0xFF000000L;
+                        prefs.edit().putInt(prefKey, (int) parsed).apply();
+                        renderThemes();
+                    } catch (NumberFormatException ex) {
+                        Toast.makeText(this, "Invalid hex colour", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     // ─── Language buttons (built-ins + custom) ────────────────────────────────
