@@ -35,10 +35,11 @@
     <!-- Special keys (caps / backspace / nav row) -->
     <dimen name="key_special_width">46dp</dimen>
     <dimen name="key_backspace_width">56dp</dimen>
-    <dimen name="key_action_width">44dp</dimen>
-    <dimen name="key_undo_width">38dp</dimen>
-    <dimen name="key_arrow_width">32dp</dimen>
-    <dimen name="key_enter_width">58dp</dimen>
+    <!-- Bottom action row keys: trimmed so the space bar can claim more width. -->
+    <dimen name="key_action_width">36dp</dimen>
+    <dimen name="key_undo_width">30dp</dimen>
+    <dimen name="key_arrow_width">26dp</dimen>
+    <dimen name="key_enter_width">46dp</dimen>
 
     <!-- Chips -->
     <dimen name="chip_corner_radius">18dp</dimen>

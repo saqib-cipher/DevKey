@@ -59,17 +59,22 @@ final class UIRenderer {
     // ─── Key / chip factory ───────────────────────────────────────────────────
     /**
      * Builds a plain {@link Button} key with a programmatic rounded background
-     * so it stays independent of the platform / Material theme.
+     * so it stays independent of the platform / Material theme. Radius, text
+     * size and stroke are pulled from the IME's user-configurable prefs so
+     * every key in the layout shares one visual language.
      */
     Button makeKey(String label, int bgColor, int textColor) {
         Button btn = new Button(ime);
         btn.setText(label);
-        btn.setTextSize(14f);
+        btn.setTextSize(ime.getKeyTextSizeSp());
         btn.setTextColor(textColor);
         btn.setAllCaps(false);
         btn.setMinHeight(0);
         btn.setMinWidth(0);
-        btn.setBackground(roundedFill(bgColor, ime.dp(12)));
+        btn.setBackground(roundedFill(bgColor,
+                ime.dp(ime.getKeyRadiusDp()),
+                ime.dp(ime.getKeyStrokeWidthDp()),
+                ime.getKeyStrokeColor()));
         btn.setPadding(ime.dp(2), ime.dp(2), ime.dp(2), ime.dp(2));
         return btn;
     }
@@ -77,7 +82,8 @@ final class UIRenderer {
     /**
      * Builds a chip-style suggestion button. The "best" candidate gets a
      * stronger fill + bold weight so the user can spot the primary
-     * suggestion at a glance.
+     * suggestion at a glance. Chips share the user's key radius (capped a
+     * little lower so they remain visually pill-y).
      */
     Button makeChip(String label, int bgColor, int textColor, boolean primary) {
         Button btn = new Button(ime);
@@ -87,7 +93,12 @@ final class UIRenderer {
         btn.setTextColor(textColor);
         btn.setTypeface(primary ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
         btn.setPadding(ime.dp(12), 0, ime.dp(12), 0);
-        btn.setBackground(roundedFill(bgColor, ime.dp(18)));
+        // Chips use a slightly larger radius than keys (or fall back to the
+        // user setting if it's already above the chip baseline).
+        int chipRadius = Math.max(ime.dp(ime.getKeyRadiusDp()), ime.dp(14));
+        btn.setBackground(roundedFill(bgColor, chipRadius,
+                ime.dp(ime.getKeyStrokeWidthDp()),
+                ime.getKeyStrokeColor()));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ime.dp(32));
         lp.setMargins(ime.dp(4), ime.dp(4), ime.dp(4), ime.dp(4));
@@ -99,9 +110,19 @@ final class UIRenderer {
 
     /** Rounded solid fill used everywhere the keyboard wants a soft corner. */
     GradientDrawable roundedFill(int color, int radiusPx) {
+        return roundedFill(color, radiusPx, 0, 0);
+    }
+
+    /**
+     * Rounded fill with an optional stroke. Stroke is fully transparent by
+     * default so existing call sites keep their look; the IME passes user
+     * settings through this overload to draw a customizable border.
+     */
+    GradientDrawable roundedFill(int color, int radiusPx, int strokePx, int strokeColor) {
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(color);
         bg.setCornerRadius(radiusPx);
+        if (strokePx > 0) bg.setStroke(strokePx, strokeColor);
         return bg;
     }
 
@@ -113,7 +134,8 @@ final class UIRenderer {
      */
     void fillEmojiPanel(View panelView, EmojiEngine engine,
                         int keyBg, int textCol, int accent,
-                        CategoryTap onCategory, EmojiTap onEmoji, Runnable onClearSearch) {
+                        CategoryTap onCategory, EmojiTap onEmoji,
+                        Runnable onBackspaceSearch, Runnable onClearSearch) {
         // ── Bottom search bar (pill + key-styled clear) ──
         TextView searchText = panelView.findViewById(R.id.emoji_search_text);
         Button clearBtn = panelView.findViewById(R.id.emoji_search_clear);
@@ -139,11 +161,14 @@ final class UIRenderer {
         }
 
         if (clearBtn != null) {
-            // Always-visible clear key, styled like the keyboard backspace key.
-            clearBtn.setText(engine.isSearching() ? "✕" : "⌫");
+            // Always-visible backspace-style key. Tap deletes the last search
+            // character (so it actually behaves like a backspace, matching the
+            // "⌫" glyph); long-press wipes the whole query.
+            clearBtn.setText("⌫");
             clearBtn.setTextColor(engine.isSearching() ? accent : textCol);
             clearBtn.setBackground(roundedFill(keyBg, ime.dp(12)));
-            clearBtn.setOnClickListener(v -> onClearSearch.run());
+            clearBtn.setOnClickListener(v -> onBackspaceSearch.run());
+            clearBtn.setOnLongClickListener(v -> { onClearSearch.run(); return true; });
         }
 
         // ── Category tabs (plain Button + rounded background) ──
@@ -204,6 +229,9 @@ final class UIRenderer {
             btn.setPadding(0, 0, 0, 0);
             btn.setMinHeight(0);
             btn.setMinWidth(0);
+            // Same hover/preview popup the letter keys use, so the user can
+            // see which emoji they're about to commit.
+            btn.setOnTouchListener(ime.keyPreviewToucher(emoji));
             btn.setOnClickListener(v -> onEmoji.onEmoji(emoji));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
             lp.setMargins(ime.dp(2), ime.dp(2), ime.dp(2), ime.dp(2));
