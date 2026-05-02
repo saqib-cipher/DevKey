@@ -367,10 +367,15 @@ public class SettingsActivity extends AppCompatActivity {
     private void showThemedDialog(AlertDialog dlg) {
         int bg     = prefs.getInt("bg_color",     0xFF1A1A2E);
         int accent = prefs.getInt("accent_color", 0xFF00E5FF);
+        // Match the dialog's corner radius to the user's key radius so the
+        // whole settings UI shares one rounded language. Floor at 8dp so a
+        // user with sharp keys (radius 0) still gets a reasonable dialog.
+        int kr = Math.max(0, Math.min(40, prefs.getInt("key_radius_dp", 12)));
+        int dialogRadius = dp(Math.max(8, kr + 4));
         dlg.setOnShowListener(d -> {
             try {
                 if (dlg.getWindow() != null) {
-                    dlg.getWindow().setBackgroundDrawable(themedRoundedFill(bg, accent, dp(20), dp(1)));
+                    dlg.getWindow().setBackgroundDrawable(themedRoundedFill(bg, accent, dialogRadius, dp(1)));
                 }
                 Button pos = dlg.getButton(AlertDialog.BUTTON_POSITIVE);
                 if (pos != null) pos.setTextColor(accent);
@@ -858,34 +863,10 @@ public class SettingsActivity extends AppCompatActivity {
         preferencesContainer.addView(buildKeyboardHeightSelector(textCol, bg, accent));
         preferencesContainer.addView(buildKeySoundVolumeSelector(textCol, bg, accent));
 
-        // Appearance (key shape, size, border, colours) lives inside the
-        // Custom theme panel — see renderCustomThemePanel — so users have a
-        // single place to tune their personal look instead of two.
-
-        // ── Keyboard background ─────────────────────────────────────────
-        preferencesContainer.addView(buildSectionHeader("Keyboard Background", textCol));
-        preferencesContainer.addView(buildBackgroundModeSelector(textCol, bg, accent));
-        String mode = prefs.getString("kb_bg_mode", "solid");
-        if ("gradient".equals(mode)) {
-            preferencesContainer.addView(buildColorSelector(
-                    "Gradient Top",
-                    "Top color of the keyboard gradient.",
-                    "kb_bg_gradient_start",
-                    prefs.getInt("kb_bg_gradient_start", bg),
-                    new int[]{0xFF1A1A2E, 0xFF000000, 0xFF1565C0, 0xFF6A1B9A, 0xFF263238, 0xFFE91E63},
-                    new String[]{"Navy", "Black", "Blue", "Purple", "Slate", "Pink"},
-                    textCol, bg, accent));
-            preferencesContainer.addView(buildColorSelector(
-                    "Gradient Bottom",
-                    "Bottom color of the keyboard gradient.",
-                    "kb_bg_gradient_end",
-                    prefs.getInt("kb_bg_gradient_end", 0xFF000000),
-                    new int[]{0xFF000000, 0xFF1A1A2E, 0xFF263238, 0xFF311B92, 0xFFB71C1C, 0xFF1B5E20},
-                    new String[]{"Black", "Navy", "Slate", "Indigo", "Red", "Green"},
-                    textCol, bg, accent));
-        } else if ("image".equals(mode)) {
-            preferencesContainer.addView(buildBackgroundImagePicker(textCol, bg, accent));
-        }
+        // Appearance (key shape, size, border, colours) and the keyboard
+        // Background Mode (solid/gradient/image) all live inside the Custom
+        // theme panel — see renderCustomThemePanel — so the user has a single
+        // place to tune their personal look with a real-time preview.
     }
 
     private TextView buildSectionHeader(String label, int textCol) {
@@ -945,81 +926,13 @@ public class SettingsActivity extends AppCompatActivity {
             b.setLayoutParams(lp);
             b.setOnClickListener(view -> {
                 prefs.edit().putInt(key, v).apply();
+                // Both panels host int-step selectors today; rebuild whichever
+                // is showing so the highlighted button + preview track the new
+                // value without a flash of stale UI.
+                renderCustomThemePanel(true);
                 renderPreferences();
             });
             row.addView(b);
-        }
-        card.addView(row);
-        return card;
-    }
-
-    /**
-     * Preset color picker — each option is a labelled swatch. Stores the
-     * chosen ARGB int under {@code key}.
-     */
-    private View buildColorSelector(String label, String desc, final String key,
-                                    int defValue,
-                                    final int[] colors, final String[] names,
-                                    int textCol, int bg, int accent) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
-        card.setPadding(dp(16), dp(12), dp(16), dp(14));
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        clp.setMargins(0, dp(2), 0, dp(2));
-        card.setLayoutParams(clp);
-
-        TextView lv = new TextView(this);
-        lv.setText(label);
-        lv.setTextSize(15f);
-        lv.setTextColor(textCol);
-        card.addView(lv);
-
-        TextView dv = new TextView(this);
-        dv.setText(desc);
-        dv.setTextSize(11f);
-        dv.setTextColor(dim(textCol));
-        dv.setPadding(0, 0, 0, dp(8));
-        card.addView(dv);
-
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-
-        int current = prefs.getInt(key, defValue);
-        for (int i = 0; i < colors.length; i++) {
-            final int color = colors[i];
-            boolean sel = current == color;
-
-            LinearLayout cell = new LinearLayout(this);
-            cell.setOrientation(LinearLayout.VERTICAL);
-            cell.setGravity(Gravity.CENTER);
-            cell.setBackgroundColor(sel ? blend(bg, accent, 0.22f) : blend(bg, 0xFFFFFFFF, 0.05f));
-            cell.setPadding(dp(2), dp(6), dp(2), dp(6));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);
-            lp.setMargins(2, 0, 2, 0);
-            cell.setLayoutParams(lp);
-
-            View swatch = new View(this);
-            // For fully-transparent colors, paint a tiny checkered hint so the
-            // user knows this means "no color".
-            swatch.setBackgroundColor((color >>> 24) == 0 ? 0x33FFFFFF : color);
-            LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(22), dp(14));
-            swatch.setLayoutParams(slp);
-            cell.addView(swatch);
-
-            TextView name = new TextView(this);
-            name.setText(names[i]);
-            name.setTextSize(10f);
-            name.setTextColor(sel ? accent : textCol);
-            name.setGravity(Gravity.CENTER);
-            cell.addView(name);
-
-            cell.setOnClickListener(view -> {
-                prefs.edit().putInt(key, color).apply();
-                renderPreferences();
-            });
-            row.addView(cell);
         }
         card.addView(row);
         return card;
@@ -1073,6 +986,7 @@ public class SettingsActivity extends AppCompatActivity {
             b.setLayoutParams(lp);
             b.setOnClickListener(v -> {
                 prefs.edit().putString("kb_bg_mode", mode).apply();
+                renderCustomThemePanel(true);
                 renderPreferences();
             });
             row.addView(b);
@@ -1510,22 +1424,39 @@ public class SettingsActivity extends AppCompatActivity {
         int accent = prefs.getInt("accent_color", 0xFF00E5FF);
         int keyCol = prefs.getInt("key_color", 0xFF252545);
 
+        // ── Live preview ─────────────────────────────────────────────────
+        // A skeleton rendering of the keyboard that reads pref values at draw
+        // time — every change below rebuilds this panel so the preview always
+        // reflects the latest state without needing to dismiss settings or
+        // re-open the IME.
+        KeyboardSkeletonPreview preview = new KeyboardSkeletonPreview(this);
+        // Reflect the chosen background image (if any) directly in the preview.
+        String previewImg = prefs.getString(PREF_BG_IMAGE_URI, null);
+        if (!TextUtils.isEmpty(previewImg)) {
+            Bitmap bmp = decodeUriThumbnail(previewImg, dp(220));
+            if (bmp != null) preview.setImage(bmp);
+            preview.setImageOpacity(prefs.getInt(PREF_BG_IMAGE_OPACITY, 70));
+        }
+        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(180));
+        plp.setMargins(dp(2), dp(6), dp(2), dp(8));
+        preview.setLayoutParams(plp);
+        customThemeContainer.addView(preview);
+
         // Heading hint
         TextView hint = new TextView(this);
-        hint.setText("Tap a colour to edit. Long-press the background for dark/light hint.");
+        hint.setText("Tap a colour to edit. Changes apply live in the preview above.");
         hint.setTextSize(11f);
         hint.setTextColor(dim(textCol));
         hint.setPadding(dp(14), dp(6), dp(14), dp(8));
         customThemeContainer.addView(hint);
 
         // ── Colours ──
+        customThemeContainer.addView(buildSectionHeader("Colors", textCol));
         customThemeContainer.addView(buildColorRow("Background",   "bg_color",     bg));
         customThemeContainer.addView(buildColorRow("Key surface",  "key_color",    keyCol));
         customThemeContainer.addView(buildColorRow("Text",         "text_color",   textCol));
         customThemeContainer.addView(buildColorRow("Accent",       "accent_color", accent));
-
-        // Background-image row.
-        customThemeContainer.addView(buildBackgroundImageRow());
 
         // Dark/Light toggle row.
         Switch sw = new Switch(this);
@@ -1533,12 +1464,36 @@ public class SettingsActivity extends AppCompatActivity {
         sw.setTextColor(textCol);
         sw.setChecked(prefs.getBoolean("dark", true));
         sw.setPadding(dp(14), dp(6), dp(14), dp(6));
-        sw.setOnCheckedChangeListener((b, c) -> prefs.edit().putBoolean("dark", c).apply());
+        sw.setOnCheckedChangeListener((b, c) -> {
+            prefs.edit().putBoolean("dark", c).apply();
+            renderCustomThemePanel(true);
+        });
         customThemeContainer.addView(sw);
 
+        // ── Background ──
+        // Background mode (solid / gradient / image) and its sub-controls
+        // were previously in their own section under Preferences. Folding
+        // them into the custom theme keeps every visual knob in one place.
+        customThemeContainer.addView(buildSectionHeader("Background", textCol));
+        customThemeContainer.addView(buildBackgroundImageRow());
+        customThemeContainer.addView(buildBackgroundModeSelector(textCol, bg, accent));
+        String mode = prefs.getString("kb_bg_mode", "solid");
+        if ("gradient".equals(mode)) {
+            // Use the unified colour picker (rather than the preset-chip
+            // selector) so the user can dial in any colour, including alpha,
+            // without being locked to the old palette.
+            int gradStart = prefs.getInt("kb_bg_gradient_start", bg);
+            int gradEnd   = prefs.getInt("kb_bg_gradient_end",
+                    blend(bg, 0xFF000000, 0.30f));
+            customThemeContainer.addView(
+                    buildColorRow("Gradient top",    "kb_bg_gradient_start", gradStart));
+            customThemeContainer.addView(
+                    buildColorRow("Gradient bottom", "kb_bg_gradient_end",   gradEnd));
+        } else if ("image".equals(mode)) {
+            customThemeContainer.addView(buildBackgroundImagePicker(textCol, bg, accent));
+        }
+
         // ── Shape & size ──
-        // Folded into the custom theme so the user only has one place to tune
-        // their personal look (was previously a separate "Appearance" section).
         customThemeContainer.addView(buildSectionHeader("Shape & size", textCol));
         customThemeContainer.addView(buildIntStepSelector(
                 "Key corner radius",
@@ -1558,13 +1513,11 @@ public class SettingsActivity extends AppCompatActivity {
                 "key_stroke_width_dp", 0,
                 new int[]{0, 1, 2, 3, 4},
                 textCol, bg, accent));
-        customThemeContainer.addView(buildColorSelector(
-                "Key border color",
-                "Color of the stroke when border width > 0.",
-                "key_stroke_color", 0x00000000,
-                new int[]{0x00000000, 0x66FFFFFF, 0xFF888888, 0xFF000000, accent},
-                new String[]{"Off", "Soft", "Gray", "Black", "Accent"},
-                textCol, bg, accent));
+        // Unified colour picker for the stroke — same dialog as the four
+        // theme colours, so the user can pick any colour with alpha.
+        int strokeCol = prefs.getInt("key_stroke_color", 0x00000000);
+        customThemeContainer.addView(
+                buildColorRow("Key border color", "key_stroke_color", strokeCol));
     }
 
     /**
@@ -1829,12 +1782,33 @@ public class SettingsActivity extends AppCompatActivity {
             int keyCol = prefs.getInt("key_color", 0xFF252545);
             int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
             int accent = prefs.getInt("accent_color", 0xFF00E5FF);
+            // Honour the user's shape settings so the preview reflects the
+            // exact radius / stroke they're about to apply to the IME.
+            String mode = prefs.getString("kb_bg_mode", "solid");
+            int gradStart = prefs.getInt("kb_bg_gradient_start", bg);
+            int gradEnd   = prefs.getInt("kb_bg_gradient_end",
+                    blend(bg, 0xFF000000, 0.30f));
+            boolean amoled = prefs.getBoolean("amoled", false);
+            int strokeColPref = prefs.getInt("key_stroke_color", 0x00000000);
+            int strokeWPref   = Math.max(0, Math.min(6,
+                    prefs.getInt("key_stroke_width_dp", 0)));
 
-            // Container background (always paint the theme colour so the
-            // preview tracks the rest of the editor even when no image is
-            // chosen).
-            bgPaint.setColor(bg);
-            c.drawRect(0, 0, w, h, bgPaint);
+            // Container background — paints either solid, gradient, or the
+            // image (already blitted above). AMOLED short-circuits to black to
+            // mirror the IME's behaviour.
+            if (amoled) {
+                bgPaint.setColor(0xFF000000);
+                c.drawRect(0, 0, w, h, bgPaint);
+            } else if (image == null && "gradient".equals(mode)) {
+                android.graphics.LinearGradient lg = new android.graphics.LinearGradient(
+                        0, 0, 0, h, gradStart, gradEnd, android.graphics.Shader.TileMode.CLAMP);
+                bgPaint.setShader(lg);
+                c.drawRect(0, 0, w, h, bgPaint);
+                bgPaint.setShader(null);
+            } else if (image == null) {
+                bgPaint.setColor(bg);
+                c.drawRect(0, 0, w, h, bgPaint);
+            }
 
             if (image != null) {
                 imagePaint.setAlpha((int) Math.round(imageOpacity / 100.0 * 255));
@@ -1856,10 +1830,21 @@ public class SettingsActivity extends AppCompatActivity {
             // 6 horizontal slots: suggestion strip, then 4 key rows, then
             // a bottom action row (space + enter).
             float slotH = (h - pad * 2 - gap * 5) / 6f;
-            float radius = dp(4);
-
-            keyPaint.setColor(withAlpha(keyCol, 0xCC));
-            borderPaint.setColor(withAlpha(textCol, 0x55));
+            // Map the user's keyboard radius to a preview-scale radius. The
+            // skeleton keys are smaller than real keys so we scale the radius
+            // proportionally (≈ 1/3) so the visual ratio looks correct.
+            int keyRadiusPref = Math.max(0, Math.min(40,
+                    prefs.getInt("key_radius_dp", 12)));
+            float radius = dp(Math.max(2, keyRadiusPref / 3));
+            // AMOLED forces black keys with no stroke, just like the live IME.
+            int effKeyCol = amoled ? 0xFF000000 : keyCol;
+            int effStrokeCol = amoled ? 0 : strokeColPref;
+            int effStrokeW = amoled ? 0 : strokeWPref;
+            keyPaint.setColor(withAlpha(effKeyCol, 0xCC));
+            borderPaint.setColor(effStrokeW > 0 && (effStrokeCol >>> 24) != 0
+                    ? effStrokeCol
+                    : withAlpha(textCol, 0x55));
+            borderPaint.setStrokeWidth(Math.max(dp(1), dp(effStrokeW)));
             accentPaint.setColor(withAlpha(accent, 0xCC));
 
             float y = pad;
