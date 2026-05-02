@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    panel_cursor.xml — full-panel cursor controller.
+
+    Shown when the user taps the single "cursor" button in Gboard-style
+    mode. Replaces the keyboard panel (FrameLayout @id/panel_container)
+    with a generous D-pad so cursor work doesn't squeeze into a 26dp
+    touch target. Each direction repeats while held (the IME attaches a
+    long-press handler in code, mirroring the backspace pattern).
+
+    Layout:
+      ┌──────────────┬────────┬──────────────┐
+      │   Select ◐   │   ▲    │   Home  ⇤    │
+      │              ├────────┤              │
+      │              │   ◀    │   ▶          │
+      │   Copy ⧉     │        │   End   ⇥    │
+      │              ├────────┤              │
+      │   Paste ⎘    │   ▼    │   ↵ keyboard │
+      └──────────────┴────────┴──────────────┘
+
+    All colors are baseline #252545 / #E8E8FF — Java overrides them at
+    runtime to track the user's accent + key colors, just like the
+    keyboard panel.
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="6dp">
+
+    <!-- ── Left column: selection / clipboard helpers ── -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginEnd="4dp">
+
+        <Button
+            android:id="@+id/cursor_btn_select_toggle"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:text="Select"
+            android:textAllCaps="false"
+            android:textSize="14sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545" />
+
+        <Button
+            android:id="@+id/cursor_btn_select_all"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:text="Select all"
+            android:textAllCaps="false"
+            android:textSize="13sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545" />
+
+        <Button
+            android:id="@+id/cursor_btn_copy"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:text="Copy"
+            android:textAllCaps="false"
+            android:textSize="13sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545" />
+
+        <Button
+            android:id="@+id/cursor_btn_paste"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:text="Paste"
+            android:textAllCaps="false"
+            android:textSize="13sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545" />
+    </LinearLayout>
+
+    <!-- ── Center column: D-pad ── -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1.4"
+        android:orientation="vertical"
+        android:layout_marginStart="2dp"
+        android:layout_marginEnd="2dp">
+
+        <ImageButton
+            android:id="@+id/cursor_btn_up"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:src="@drawable/arrow_badge_up"
+            android:scaleType="fitCenter"
+            android:padding="14dp"
+            android:background="#252545"
+            android:contentDescription="Up" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/cursor_btn_left"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginEnd="3dp"
+                android:src="@drawable/arrow_badge_left"
+                android:scaleType="fitCenter"
+                android:padding="14dp"
+                android:background="#252545"
+                android:contentDescription="Left" />
+
+            <ImageButton
+                android:id="@+id/cursor_btn_right"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:src="@drawable/arrow_badge_right"
+                android:scaleType="fitCenter"
+                android:padding="14dp"
+                android:background="#252545"
+                android:contentDescription="Right" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/cursor_btn_down"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:src="@drawable/arrow_badge_down"
+            android:scaleType="fitCenter"
+            android:padding="14dp"
+            android:background="#252545"
+            android:contentDescription="Down" />
+    </LinearLayout>
+
+    <!-- ── Right column: line jump + close ── -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginStart="4dp">
+
+        <Button
+            android:id="@+id/cursor_btn_home"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:text="Home"
+            android:textAllCaps="false"
+            android:textSize="13sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545" />
+
+        <Button
+            android:id="@+id/cursor_btn_end"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:text="End"
+            android:textAllCaps="false"
+            android:textSize="13sp"
+            android:textColor="#E8E8FF"
+            android:background="#252545" />
+
+        <ImageButton
+            android:id="@+id/cursor_btn_backspace"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:src="@drawable/backspace"
+            android:scaleType="fitCenter"
+            android:padding="12dp"
+            android:background="#252545"
+            android:contentDescription="Backspace" />
+
+        <Button
+            android:id="@+id/cursor_btn_close"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:text="ABC"
+            android:textAllCaps="false"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="#00E5FF"
+            android:background="#252545" />
+    </LinearLayout>
+</LinearLayout>

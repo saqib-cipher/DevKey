@@ -1,19 +1,28 @@
 // app/build.gradle
 // ─────────────────────────────────────────────────────────────────────────────
-// Sketchware Pro users: these settings mirror what Sketchware generates.
-// If building in Sketchware, match your project's compileSdkVersion.
+// Android Studio / AGP 8 module config. The `namespace` field replaces the
+// old <manifest package="…"> attribute and is REQUIRED for AGP 8+ — without
+// it Gradle sync fails with "Namespace not specified", which in turn keeps
+// the layout editor unavailable.
+//
+// The custom `sourceSets` mapping points main/ at our existing src/main/
+// layout (no surprise paths), so renaming or moving source folders will not
+// silently change the build inputs.
 // ─────────────────────────────────────────────────────────────────────────────
 
-apply plugin: 'com.android.application'
+plugins {
+    id 'com.android.application'
+}
 
 android {
-    compileSdkVersion 34
+    namespace 'com.codekeys.ime'
+    compileSdk 34
     buildToolsVersion "34.0.0"
 
     defaultConfig {
         applicationId "com.codekeys.ime"
-        minSdkVersion 21          // Android 5.0+ support
-        targetSdkVersion 34
+        minSdk 21          // Android 5.0+ support
+        targetSdk 34
         versionCode 1
         versionName "1.0.0"
     }
@@ -29,8 +38,20 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // The IDE's layout editor needs the standard src/main/{java,res,assets}
+    // tree; this block makes the assumption explicit so a future move can't
+    // silently break sync.
+    sourceSets {
+        main {
+            manifest.srcFile 'src/main/AndroidManifest.xml'
+            java.srcDirs    = ['src/main/java']
+            res.srcDirs     = ['src/main/res']
+            assets.srcDirs  = ['src/main/assets']
+        }
     }
 }
 

@@ -8,16 +8,21 @@
     "Add Source Directly" feature to inject this full manifest.
     ──────────────────────────────────────────────────────────────────────────
 -->
+<!--
+    Note: the legacy package="…" attribute was removed for AGP 8+. The
+    namespace and applicationId now live in app/build.gradle, and Gradle
+    sync fails (with the layout editor stuck on "unavailable until next
+    sync") if both are present.
+-->
 <manifest
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.codekeys.ime">
+    xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_launcher"
         android:label="CodeKeys"
         android:theme="@style/AppTheme">
 

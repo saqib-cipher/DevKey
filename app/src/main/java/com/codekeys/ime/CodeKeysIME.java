@@ -137,12 +137,23 @@ public class CodeKeysIME extends InputMethodService {
 
     // Bottom action row
     private Button btnEnter, btnSpace;
+    // Gboard-style extras — comma/period replace the settings + arrows
+    // when the gboard_style_row pref is on, and btn_cursor_panel toggles
+    // the dedicated cursor controller panel (PanelMode.CURSOR).
+    private Button btnComma, btnPeriod;
+    private ImageButton btnCursorPanel;
+    // Containers for the two arrow clusters — kept as fields so the
+    // Gboard-style toggle can hide them as a unit (including margins)
+    // rather than each ImageButton individually.
+    private View arrowClusterVertical, arrowClusterHorizontal;
     // The remaining action-row buttons are ImageButtons (Tabler vector icons)
     // — kept as ImageButton so findViewById casts cleanly. The IME tints them
     // at runtime to track the active theme's text/accent colours.
     private ImageButton btnSettings, btnSymbolsPanel, btnEmoji;
     private ImageButton btnUndo, btnRedo;
     private ImageButton btnArrowLeft, btnArrowRight, btnArrowUp, btnArrowDown;
+    /** Cached cursor controller panel view (lazy inflated). */
+    private View cursorPanelView;
 
     // Keyboard panel children (cached when the panel is built)
     private LinearLayout rowSymbols, rowSnippets, rowNumbers;
@@ -361,6 +372,18 @@ public class CodeKeysIME extends InputMethodService {
             case "key_height_scale":
                 applyKeyboardHeight();
                 break;
+            case "gboard_style_row":
+                // Toggle the bottom row layout live. If the cursor panel is
+                // currently open and the user disabled Gboard mode, drop back
+                // to the keyboard so they don't end up in a panel they can't
+                // exit (the cursor toggle button vanishes with the pref).
+                applyGboardStyleVisibility();
+                if (panelMode == PanelMode.CURSOR
+                        && !prefs.getBoolean("gboard_style_row", false)) {
+                    switchPanel(PanelMode.KEYBOARD);
+                }
+                applyTheme();
+                break;
             default:
                 break;
         }
@@ -568,6 +591,12 @@ public class CodeKeysIME extends InputMethodService {
         btnArrowRight   = keyboardView.findViewById(R.id.btn_arrow_right);
         btnArrowUp      = keyboardView.findViewById(R.id.btn_arrow_up);
         btnArrowDown    = keyboardView.findViewById(R.id.btn_arrow_down);
+        // Gboard-style extras
+        btnComma        = keyboardView.findViewById(R.id.btn_comma);
+        btnPeriod       = keyboardView.findViewById(R.id.btn_period);
+        btnCursorPanel  = keyboardView.findViewById(R.id.btn_cursor_panel);
+        arrowClusterVertical   = keyboardView.findViewById(R.id.arrow_cluster_vertical);
+        arrowClusterHorizontal = keyboardView.findViewById(R.id.arrow_cluster_horizontal);
 
         btnSettings.setOnClickListener(v -> { haptic(v); showSettingsLanguagePopup(v); });
         btnSymbolsPanel.setOnClickListener(v -> {
@@ -580,10 +609,10 @@ public class CodeKeysIME extends InputMethodService {
         });
         btnSpace.setOnClickListener(v -> {
             haptic(v);
-            // While the clipboard panel is open, the giant space bar doubles as
-            // an "back to keyboard" button — committing whitespace there isn't
-            // what the user wants and the explicit ABC button is too small.
-            if (panelMode == PanelMode.CLIPBOARD) {
+            // While clipboard / cursor panels are open the giant space bar
+            // doubles as an "back to keyboard" button — committing whitespace
+            // there isn't what the user wants.
+            if (panelMode == PanelMode.CLIPBOARD || panelMode == PanelMode.CURSOR) {
                 switchPanel(PanelMode.KEYBOARD);
             } else {
                 onSpace();
@@ -597,9 +626,73 @@ public class CodeKeysIME extends InputMethodService {
         btnArrowUp.setOnClickListener(v -> sendArrow(KeyEvent.KEYCODE_DPAD_UP));
         btnArrowDown.setOnClickListener(v -> sendArrow(KeyEvent.KEYCODE_DPAD_DOWN));
 
+        // ── Gboard-style: comma / period / cursor toggle ──
+        if (btnComma != null) {
+            btnComma.setOnClickListener(v -> { haptic(v); commitChar(","); });
+            // Long-press on comma surfaces the settings + language popup,
+            // since the dedicated settings icon is hidden in this mode.
+            btnComma.setOnLongClickListener(v -> {
+                haptic(v);
+                showSettingsLanguagePopup(v);
+                return true;
+            });
+            // Same hover popup as letter keys so the user sees what they're inserting.
+            btnComma.setOnTouchListener(keyPreviewToucher(","));
+        }
+        if (btnPeriod != null) {
+            btnPeriod.setOnClickListener(v -> { haptic(v); commitChar("."); });
+            // Long-press on period jumps directly into the cursor panel —
+            // matches Gboard's "press-and-hold for symbols" muscle memory
+            // while keeping the panel reachable without the dedicated button.
+            btnPeriod.setOnLongClickListener(v -> {
+                haptic(v);
+                switchPanel(panelMode == PanelMode.CURSOR ? PanelMode.KEYBOARD : PanelMode.CURSOR);
+                return true;
+            });
+            btnPeriod.setOnTouchListener(keyPreviewToucher("."));
+        }
+        if (btnCursorPanel != null) {
+            btnCursorPanel.setOnClickListener(v -> {
+                haptic(v);
+                switchPanel(panelMode == PanelMode.CURSOR ? PanelMode.KEYBOARD : PanelMode.CURSOR);
+            });
+        }
+
         updateEnterButton(getCurrentInputEditorInfo());
         refreshHistoryButtonsState();
         refreshArrowButtonsState();
+        applyGboardStyleVisibility();
+    }
+
+    /**
+     * Toggles the bottom action row between the original layout (settings
+     * icon + arrow clusters) and the Gboard-style layout (comma + period
+     * around space, single cursor button instead of arrows). Driven by the
+     * {@code gboard_style_row} preference.
+     */
+    private void applyGboardStyleVisibility() {
+        if (keyboardView == null) return;
+        boolean gboard = prefs.getBoolean("gboard_style_row", false);
+
+        // Hidden in Gboard mode: settings icon, emoji, undo/redo (a coding
+        // keyboard nicety, but they crowd the row), and both arrow clusters.
+        setVisible(btnSettings, !gboard);
+        setVisible(btnEmoji,    !gboard);
+        setVisible(btnUndo,     !gboard);
+        setVisible(btnRedo,     !gboard);
+        setVisible(arrowClusterVertical,   !gboard);
+        setVisible(arrowClusterHorizontal, !gboard);
+
+        // Shown in Gboard mode: comma/period flank the space bar; the
+        // cursor panel toggle replaces the arrow cluster on the right.
+        setVisible(btnComma,       gboard);
+        setVisible(btnPeriod,      gboard);
+        setVisible(btnCursorPanel, gboard);
+    }
+
+    private static void setVisible(View v, boolean visible) {
+        if (v == null) return;
+        v.setVisibility(visible ? View.VISIBLE : View.GONE);
     }
 
     // ─── Panel switching (single source of truth) ────────────────────────────
@@ -622,6 +715,27 @@ public class CodeKeysIME extends InputMethodService {
                 if (clipboardPanelView == null) clipboardPanelView = ui.inflateClipboardPanel(panelContainer);
                 view = clipboardPanelView;
                 refreshClipboardPanel();
+                break;
+            case CURSOR:
+                if (cursorPanelView == null) {
+                    cursorPanelView = LayoutInflater.from(this)
+                            .inflate(R.layout.panel_cursor, panelContainer, false);
+                    bindCursorPanel(cursorPanelView);
+                }
+                // Size the panel to roughly four keyboard rows so its D-pad
+                // arrows have generous touch targets — the inner buttons use
+                // weight, so they need an explicit parent height to lay out.
+                ViewGroup.LayoutParams clp = cursorPanelView.getLayoutParams();
+                int targetH = Math.round(dp(48) * 4 * getHeightScale());
+                if (clp == null) {
+                    cursorPanelView.setLayoutParams(new FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, targetH));
+                } else {
+                    clp.height = targetH;
+                    cursorPanelView.setLayoutParams(clp);
+                }
+                view = cursorPanelView;
+                styleCursorPanel(cursorPanelView);
                 break;
             case SYMBOLS:
                 if (keyboardPanelView == null) keyboardPanelView = ui.inflateKeyboardPanel(panelContainer);
@@ -654,10 +768,15 @@ public class CodeKeysIME extends InputMethodService {
         // the rounded-radius / stroke look consistent while the active panel
         // changes its highlight.
         styleStaticKeys();
-        // The space bar's label changes role with the panel: in clipboard mode
-        // it acts as an "back to keyboard" button instead of inserting space.
+        // The space bar's label changes role with the panel: in clipboard /
+        // cursor mode it acts as an "back to keyboard" button instead of
+        // inserting space.
         if (btnSpace != null) {
-            btnSpace.setText(panelMode == PanelMode.CLIPBOARD ? "ABC — back to keyboard" : "space");
+            String spaceLabel;
+            if (panelMode == PanelMode.CLIPBOARD)    spaceLabel = "ABC — back to keyboard";
+            else if (panelMode == PanelMode.CURSOR)  spaceLabel = "ABC — back to keyboard";
+            else                                     spaceLabel = "space";
+            btnSpace.setText(spaceLabel);
         }
 
         applyKeyboardHeight();
@@ -667,6 +786,8 @@ public class CodeKeysIME extends InputMethodService {
             renderEmojiSearchInStrip();
         } else if (panelMode == PanelMode.CLIPBOARD) {
             renderClipboardHintInStrip();
+        } else if (panelMode == PanelMode.CURSOR) {
+            renderCursorHintInStrip();
         }
     }
 
@@ -1021,6 +1142,194 @@ public class CodeKeysIME extends InputMethodService {
         hint.setGravity(Gravity.CENTER_VERTICAL);
         hint.setPadding(dp(10), 0, dp(10), 0);
         rowSuggestions.addView(hint);
+    }
+
+    /** Suggestion-strip hint shown while the cursor controller panel is up. */
+    private void renderCursorHintInStrip() {
+        if (rowSuggestions == null) return;
+        rowSuggestions.removeAllViews();
+        TextView hint = new TextView(this);
+        hint.setText("Cursor mode · arrows to move · Select to highlight · ABC to exit");
+        hint.setTextSize(11f);
+        hint.setTextColor(dim(getKeyTextColor()));
+        hint.setGravity(Gravity.CENTER_VERTICAL);
+        hint.setPadding(dp(10), 0, dp(10), 0);
+        rowSuggestions.addView(hint);
+    }
+
+    // ─── Cursor controller panel ─────────────────────────────────────────────
+    /**
+     * Tracks the in-panel "Select" toggle. While true, the four direction
+     * arrows extend the selection (KeyEvent meta = SHIFT) instead of moving
+     * the caret, mirroring how desktop keyboards handle Shift+Arrow.
+     */
+    private boolean cursorSelectMode = false;
+
+    /**
+     * Wires the cursor panel's buttons exactly once when the panel is first
+     * inflated. Direction arrows attach a press-and-hold repeat handler so
+     * holding an arrow walks the caret continuously (same pattern as the
+     * accelerating backspace handler, but simpler — no swipe path).
+     */
+    private void bindCursorPanel(View root) {
+        attachArrowHoldHandler(root.findViewById(R.id.cursor_btn_up),    KeyEvent.KEYCODE_DPAD_UP);
+        attachArrowHoldHandler(root.findViewById(R.id.cursor_btn_down),  KeyEvent.KEYCODE_DPAD_DOWN);
+        attachArrowHoldHandler(root.findViewById(R.id.cursor_btn_left),  KeyEvent.KEYCODE_DPAD_LEFT);
+        attachArrowHoldHandler(root.findViewById(R.id.cursor_btn_right), KeyEvent.KEYCODE_DPAD_RIGHT);
+
+        Button selectToggle = root.findViewById(R.id.cursor_btn_select_toggle);
+        if (selectToggle != null) {
+            selectToggle.setOnClickListener(v -> {
+                haptic(v);
+                cursorSelectMode = !cursorSelectMode;
+                styleCursorPanel(cursorPanelView);
+            });
+        }
+        Button selectAll = root.findViewById(R.id.cursor_btn_select_all);
+        if (selectAll != null) {
+            selectAll.setOnClickListener(v -> {
+                haptic(v);
+                InputConnection ic = getCurrentInputConnection();
+                if (ic != null) ic.performContextMenuAction(android.R.id.selectAll);
+            });
+        }
+        Button copy = root.findViewById(R.id.cursor_btn_copy);
+        if (copy != null) {
+            copy.setOnClickListener(v -> {
+                haptic(v);
+                InputConnection ic = getCurrentInputConnection();
+                if (ic != null) ic.performContextMenuAction(android.R.id.copy);
+                captureSelectionToClipboard();
+            });
+        }
+        Button paste = root.findViewById(R.id.cursor_btn_paste);
+        if (paste != null) {
+            paste.setOnClickListener(v -> {
+                haptic(v);
+                InputConnection ic = getCurrentInputConnection();
+                if (ic != null) ic.performContextMenuAction(android.R.id.paste);
+            });
+        }
+        Button home = root.findViewById(R.id.cursor_btn_home);
+        if (home != null) {
+            home.setOnClickListener(v -> { haptic(v); sendArrow(KeyEvent.KEYCODE_MOVE_HOME); });
+        }
+        Button end = root.findViewById(R.id.cursor_btn_end);
+        if (end != null) {
+            end.setOnClickListener(v -> { haptic(v); sendArrow(KeyEvent.KEYCODE_MOVE_END); });
+        }
+        View backspace = root.findViewById(R.id.cursor_btn_backspace);
+        if (backspace != null) attachBackspaceHoldHandler(backspace);
+
+        Button close = root.findViewById(R.id.cursor_btn_close);
+        if (close != null) {
+            close.setOnClickListener(v -> {
+                haptic(v);
+                cursorSelectMode = false;
+                switchPanel(PanelMode.KEYBOARD);
+            });
+        }
+    }
+
+    /**
+     * Press-and-hold repeat handler for the cursor panel's D-pad arrows.
+     * Honours {@link #cursorSelectMode} by routing through {@link #sendArrow}
+     * with the SHIFT meta state when select-mode is on.
+     */
+    private void attachArrowHoldHandler(View btn, final int keyCode) {
+        if (btn == null) return;
+        final long[] startTime = {0};
+        final Runnable[] loop = new Runnable[1];
+        loop[0] = new Runnable() {
+            @Override
+            public void run() {
+                sendCursorArrow(keyCode);
+                long elapsed = System.currentTimeMillis() - startTime[0];
+                long delay = elapsed < 500 ? 90 : (elapsed < 1500 ? 55 : 30);
+                uiHandler.postDelayed(this, delay);
+            }
+        };
+        btn.setOnTouchListener((v, ev) -> {
+            int action = ev.getAction();
+            if (action == MotionEvent.ACTION_DOWN) {
+                haptic(v);
+                startTime[0] = System.currentTimeMillis();
+                sendCursorArrow(keyCode);
+                uiHandler.postDelayed(loop[0], 320);
+                return true;
+            } else if (action == MotionEvent.ACTION_UP
+                    || action == MotionEvent.ACTION_CANCEL
+                    || action == MotionEvent.ACTION_OUTSIDE) {
+                uiHandler.removeCallbacks(loop[0]);
+                startTime[0] = 0;
+                return true;
+            }
+            return false;
+        });
+    }
+
+    /** Sends an arrow event, applying SHIFT when select-mode is on so the
+     *  caret extends the selection instead of moving alone. */
+    private void sendCursorArrow(int keyCode) {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+        int meta = cursorSelectMode ? KeyEvent.META_SHIFT_ON | KeyEvent.META_SHIFT_LEFT_ON : 0;
+        long now = android.os.SystemClock.uptimeMillis();
+        ic.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN,
+                keyCode, 0, meta));
+        ic.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP,
+                keyCode, 0, meta));
+    }
+
+    /**
+     * Re-applies the user's theme (key bg / text colour / radius / stroke)
+     * to every button on the cursor panel. Called whenever the panel is
+     * shown so colour changes from settings flow through immediately.
+     */
+    private void styleCursorPanel(View root) {
+        if (root == null) return;
+        int keyBg   = getKeyBgColor();
+        int textCol = getKeyTextColor();
+        int accent  = getAccentColor();
+        int radius  = dp(getKeyRadiusDp());
+        int strokeW = dp(getKeyStrokeWidthDp());
+        int strokeC = getKeyStrokeColor();
+
+        int[] plainIds = {
+                R.id.cursor_btn_select_all, R.id.cursor_btn_copy, R.id.cursor_btn_paste,
+                R.id.cursor_btn_home, R.id.cursor_btn_end
+        };
+        for (int id : plainIds) {
+            styleActionButton(root.findViewById(id), keyBg, textCol, radius, strokeW, strokeC);
+        }
+        // D-pad arrows — use the same arrow-button styler so their tints
+        // track the current text colour without leaving the icon plain black.
+        styleArrowButton((ImageButton) root.findViewById(R.id.cursor_btn_up),
+                keyBg, textCol, radius, strokeW, strokeC);
+        styleArrowButton((ImageButton) root.findViewById(R.id.cursor_btn_down),
+                keyBg, textCol, radius, strokeW, strokeC);
+        styleArrowButton((ImageButton) root.findViewById(R.id.cursor_btn_left),
+                keyBg, textCol, radius, strokeW, strokeC);
+        styleArrowButton((ImageButton) root.findViewById(R.id.cursor_btn_right),
+                keyBg, textCol, radius, strokeW, strokeC);
+        styleArrowButton((ImageButton) root.findViewById(R.id.cursor_btn_backspace),
+                keyBg, textCol, radius, strokeW, strokeC);
+
+        // The Select toggle reflects its on/off state with an accent fill so
+        // the user can tell at a glance whether arrows will extend selection.
+        Button selectToggle = root.findViewById(R.id.cursor_btn_select_toggle);
+        if (selectToggle != null) {
+            int fill = cursorSelectMode ? blend(keyBg, accent, 0.55f) : keyBg;
+            int fg   = cursorSelectMode ? 0xFF000000 : textCol;
+            styleActionButton(selectToggle, fill, fg, radius, strokeW, strokeC);
+            selectToggle.setText(cursorSelectMode ? "Selecting…" : "Select");
+        }
+        // Close uses the accent text colour (matches the enter button) since
+        // it's the primary "exit" affordance for this panel.
+        Button close = root.findViewById(R.id.cursor_btn_close);
+        if (close != null) {
+            styleActionButton(close, keyBg, accent, radius, strokeW, strokeC);
+        }
     }
 
     private void captureSelectionToClipboard() {
@@ -1937,6 +2246,9 @@ public class CodeKeysIME extends InputMethodService {
         // strip background) so that user-configurable radius / stroke / text
         // size flow through every visible button consistently.
         styleStaticKeys();
+        // Cursor panel buttons aren't part of the static key set; refresh
+        // them too when the panel exists so colour edits flow through live.
+        if (cursorPanelView != null) styleCursorPanel(cursorPanelView);
     }
 
     /**
@@ -2033,6 +2345,15 @@ public class CodeKeysIME extends InputMethodService {
         styleArrowButton(btnArrowRight, keyBg, textCol, radius, strokeW, strokeC);
         styleArrowButton(btnArrowUp,    keyBg, textCol, radius, strokeW, strokeC);
         styleArrowButton(btnArrowDown,  keyBg, textCol, radius, strokeW, strokeC);
+        // Gboard-style extras — same rounded look as the rest of the row.
+        // The cursor toggle gets an accent fill while the cursor panel is
+        // active, so the user has a visible "pressed" indicator.
+        styleActionButton(btnComma,  keyBg, textCol, radius, strokeW, strokeC);
+        styleActionButton(btnPeriod, keyBg, textCol, radius, strokeW, strokeC);
+        styleActionButton(btnCursorPanel,
+                panelMode == PanelMode.CURSOR ? accent : keyBg,
+                panelMode == PanelMode.CURSOR ? 0xFF000000 : textCol,
+                radius, strokeW, strokeC);
 
         // Caps + backspace inside the keyboard panel (only present when the
         // keyboard panel is bound).

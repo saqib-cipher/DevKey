@@ -109,7 +109,9 @@
             android:background="#252545"
             android:contentDescription="Symbols" />
 
-        <!-- Settings / Language popup trigger -->
+        <!-- Settings / Language popup trigger.
+             Hidden when "Gboard-Style Bottom Row" is on (Java toggles
+             visibility) — settings is reachable via long-press on comma. -->
         <ImageButton
             android:id="@+id/btn_settings"
             android:layout_width="@dimen/key_action_width"
@@ -121,7 +123,9 @@
             android:background="#252545"
             android:contentDescription="Settings" />
 
-        <!-- Emoji panel -->
+        <!-- Emoji panel. Hidden in Gboard-style mode (the symbols button
+             carries the Gboard "?123" role; emoji is reachable via the
+             language popup triggered by long-pressing the comma). -->
         <ImageButton
             android:id="@+id/btn_emoji"
             android:layout_width="@dimen/key_action_width"
@@ -132,6 +136,21 @@
             android:padding="9dp"
             android:background="#252545"
             android:contentDescription="Emoji" />
+
+        <!-- Comma (Gboard-style bottom row). Hidden by default; Java
+             reveals it when the gboard_style_row pref is enabled. -->
+        <Button
+            android:id="@+id/btn_comma"
+            android:layout_width="@dimen/key_action_width"
+            android:layout_height="match_parent"
+            android:layout_margin="@dimen/key_margin"
+            android:text=","
+            android:textSize="18sp"
+            android:textColor="#E8E8FF"
+            android:textAllCaps="false"
+            android:background="#252545"
+            android:visibility="gone"
+            android:contentDescription="Comma" />
 
         <!-- Undo -->
         <ImageButton
@@ -157,6 +176,22 @@
             android:textColor="#E8E8FF"
             android:background="#252545" />
 
+        <!-- Period (Gboard-style bottom row). Mirrors btn_comma on the
+             right of space. Long-press toggles the cursor controller panel
+             (one button instead of the four-arrow cluster). -->
+        <Button
+            android:id="@+id/btn_period"
+            android:layout_width="@dimen/key_action_width"
+            android:layout_height="match_parent"
+            android:layout_margin="@dimen/key_margin"
+            android:text="."
+            android:textSize="18sp"
+            android:textColor="#E8E8FF"
+            android:textAllCaps="false"
+            android:background="#252545"
+            android:visibility="gone"
+            android:contentDescription="Period" />
+
         <!-- Redo -->
         <ImageButton
             android:id="@+id/btn_redo"
@@ -169,8 +204,11 @@
             android:background="#252545"
             android:contentDescription="Redo" />
 
-        <!-- Arrow cluster (vertical: up/down) -->
+        <!-- Up/Down arrow cluster — hidden in Gboard-style mode.
+             The id `arrow_cluster_vertical` lets Java toggle the whole
+             cluster (including its margins) rather than each child. -->
         <LinearLayout
+            android:id="@+id/arrow_cluster_vertical"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:orientation="vertical"
@@ -197,8 +235,9 @@
                 android:scaleType="fitCenter" />
         </LinearLayout>
 
-        <!-- Arrow cluster (vertical: left/right) -->
+        <!-- Left/Right arrow cluster — see arrow_cluster_vertical above. -->
         <LinearLayout
+            android:id="@+id/arrow_cluster_horizontal"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:orientation="vertical"
@@ -224,6 +263,23 @@
                 android:background="#252545"
                 android:scaleType="fitCenter" />
         </LinearLayout>
+
+        <!-- Single-button cursor toggle — only visible in Gboard-style
+             mode. Tapping it replaces the keyboard panel with a generous
+             D-pad controller (CURSOR PanelMode); tapping again returns to
+             the keyboard. Lets the bottom row stay uncluttered while
+             keeping cursor control one tap away. -->
+        <ImageButton
+            android:id="@+id/btn_cursor_panel"
+            android:layout_width="@dimen/key_action_width"
+            android:layout_height="match_parent"
+            android:layout_margin="@dimen/key_margin"
+            android:src="@drawable/arrow_badge_right"
+            android:scaleType="fitCenter"
+            android:padding="8dp"
+            android:background="#252545"
+            android:visibility="gone"
+            android:contentDescription="Cursor controller" />
 
         <!-- Enter / IME action (icon by default; switched to text label
              at runtime when the active EditText specifies an IME action).

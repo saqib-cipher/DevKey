@@ -860,6 +860,15 @@ public class SettingsActivity extends AppCompatActivity {
                 "Adds Esc, Tab, Ctrl, Alt, Shift, Win, F1–F12, Home/End/PgUp/PgDn",
                 "show_pc_keys", false, textCol, bg, accent));
 
+        // Gboard-style bottom row: ?123 | , | space | . | enter — replaces
+        // the settings icon and the four-arrow cluster with a comma key on
+        // the left of space and a period key on the right. Cursor control
+        // moves into a dedicated panel reachable from a single button (see
+        // "Cursor Panel" in the keyboard).
+        preferencesContainer.addView(buildToggle("Gboard-Style Bottom Row",
+                "Use comma & period keys around space, like Gboard. Hides the settings icon and arrow cluster — cursor control moves into a dedicated panel.",
+                "gboard_style_row", false, textCol, bg, accent));
+
         preferencesContainer.addView(buildKeyboardHeightSelector(textCol, bg, accent));
         preferencesContainer.addView(buildKeySoundVolumeSelector(textCol, bg, accent));
 
@@ -991,67 +1000,6 @@ public class SettingsActivity extends AppCompatActivity {
             });
             row.addView(b);
         }
-        card.addView(row);
-        return card;
-    }
-
-    /** Pick / clear a custom keyboard background image. */
-    private View buildBackgroundImagePicker(int textCol, int bg, int accent) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
-        card.setPadding(dp(16), dp(12), dp(16), dp(14));
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        clp.setMargins(0, dp(2), 0, dp(2));
-        card.setLayoutParams(clp);
-
-        TextView lv = new TextView(this);
-        lv.setText("Background Image");
-        lv.setTextSize(15f);
-        lv.setTextColor(textCol);
-        card.addView(lv);
-
-        String uri = prefs.getString("kb_bg_image_uri", "");
-        TextView dv = new TextView(this);
-        dv.setText(TextUtils.isEmpty(uri)
-                ? "No image selected. Tap Pick to choose one."
-                : "Current: " + uri);
-        dv.setTextSize(11f);
-        dv.setTextColor(dim(textCol));
-        dv.setPadding(0, 0, 0, dp(8));
-        card.addView(dv);
-
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-
-        Button pick = new Button(this);
-        pick.setText("Pick image");
-        pick.setAllCaps(false);
-        pick.setTextSize(12f);
-        pick.setTextColor(accent);
-        pick.setBackgroundColor(blend(bg, accent, 0.18f));
-        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(0, dp(40), 1f);
-        plp.setMargins(2, 0, 2, 0);
-        pick.setLayoutParams(plp);
-        pick.setOnClickListener(v -> launchBackgroundImagePicker());
-        row.addView(pick);
-
-        Button clear = new Button(this);
-        clear.setText("Clear");
-        clear.setAllCaps(false);
-        clear.setTextSize(12f);
-        clear.setTextColor(0xFFFF6666);
-        clear.setBackgroundColor(0x22FF0000);
-        LinearLayout.LayoutParams clp2 = new LinearLayout.LayoutParams(0, dp(40), 1f);
-        clp2.setMargins(2, 0, 2, 0);
-        clear.setLayoutParams(clp2);
-        clear.setOnClickListener(v -> {
-            prefs.edit().remove("kb_bg_image_uri").apply();
-            renderPreferences();
-        });
-        row.addView(clear);
-
         card.addView(row);
         return card;
     }
@@ -1471,11 +1419,11 @@ public class SettingsActivity extends AppCompatActivity {
         customThemeContainer.addView(sw);
 
         // ── Background ──
-        // Background mode (solid / gradient / image) and its sub-controls
-        // were previously in their own section under Preferences. Folding
-        // them into the custom theme keeps every visual knob in one place.
+        // Mode chip selector drives this section: solid hides the sub-controls,
+        // gradient reveals two colour rows, image reveals the unified image
+        // picker row (a single source of truth — there used to be a second,
+        // duplicate "Pick image / Clear" card here that confused users).
         customThemeContainer.addView(buildSectionHeader("Background", textCol));
-        customThemeContainer.addView(buildBackgroundImageRow());
         customThemeContainer.addView(buildBackgroundModeSelector(textCol, bg, accent));
         String mode = prefs.getString("kb_bg_mode", "solid");
         if ("gradient".equals(mode)) {
@@ -1490,7 +1438,10 @@ public class SettingsActivity extends AppCompatActivity {
             customThemeContainer.addView(
                     buildColorRow("Gradient bottom", "kb_bg_gradient_end",   gradEnd));
         } else if ("image".equals(mode)) {
-            customThemeContainer.addView(buildBackgroundImagePicker(textCol, bg, accent));
+            // Single picker — opens a dialog with skeleton preview + opacity
+            // slider. The previous flow ALSO showed a separate inline pick/clear
+            // card, which split the same controls across two places.
+            customThemeContainer.addView(buildBackgroundImageRow());
         }
 
         // ── Shape & size ──

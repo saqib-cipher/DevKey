@@ -11,5 +11,7 @@ public enum PanelMode {
     KEYBOARD,
     SYMBOLS,
     EMOJI,
-    CLIPBOARD
+    CLIPBOARD,
+    /** D-pad + selection helpers, entered from the Gboard-style cursor button. */
+    CURSOR
 }

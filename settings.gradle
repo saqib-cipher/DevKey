@@ -1,0 +1,22 @@
+// Project structure declaration. Android Studio reads this first to figure
+// out which modules exist; the layout editor depends on a successful sync.
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    // PREFER_SETTINGS keeps allprojects { repositories } in build.gradle working
+    // for legacy modules without forcing every developer onto a strict mode.
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "CodeKeys"
+include ':app'
