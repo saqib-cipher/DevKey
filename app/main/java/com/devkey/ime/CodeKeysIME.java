@@ -85,6 +85,7 @@ public class CodeKeysIME extends InputMethodService {
     private int redoableOps = 0;
 
     private SharedPreferences prefs;
+    private SharedPreferences.OnSharedPreferenceChangeListener prefsListener;
     private Vibrator vibrator;
     private AudioManager audio;
     private ClipboardManager systemClipboard;
@@ -270,12 +271,99 @@ public class CodeKeysIME extends InputMethodService {
         clipboardStore   = new ClipboardStore(prefs);
         ui               = new UIRenderer(this);
         registerSystemClipboardListener();
+        registerPrefsListener();
     }
 
     @Override
     public void onDestroy() {
         unregisterSystemClipboardListener();
+        unregisterPrefsListener();
         super.onDestroy();
+    }
+
+    /**
+     * Listens for SharedPreferences changes so that edits made in
+     * {@link SettingsActivity} (which lives in the same process) flow through
+     * to a live keyboard immediately — without needing the user to re-attach
+     * the IME. Theme / shape / text-size keys force a full re-style: qwerty
+     * rows are rebuilt so {@code makeKey} re-reads radius / stroke / text size,
+     * and static keys are restyled via {@link #applyTheme()}. Background-only
+     * keys do a lighter refresh.
+     */
+    private void registerPrefsListener() {
+        prefsListener = (sp, key) -> {
+            if (key == null || keyboardView == null) return;
+            // Skip while view isn't on screen — onStartInputView already
+            // re-applies the theme so we don't want to do extra work.
+            uiHandler.post(() -> applyPrefChange(key));
+        };
+        try {
+            prefs.registerOnSharedPreferenceChangeListener(prefsListener);
+        } catch (Exception ignored) {}
+    }
+
+    private void unregisterPrefsListener() {
+        if (prefsListener == null) return;
+        try {
+            prefs.unregisterOnSharedPreferenceChangeListener(prefsListener);
+        } catch (Exception ignored) {}
+        prefsListener = null;
+    }
+
+    /**
+     * Routes a single SharedPreferences key change to the smallest possible
+     * keyboard refresh. Shape / size / theme keys rebuild the dynamic key
+     * rows so {@link UIRenderer#makeKey} picks up new radius / stroke / text
+     * size; background keys just re-paint the keyboard root.
+     */
+    private void applyPrefChange(String key) {
+        if (keyboardView == null) return;
+        switch (key) {
+            case "key_radius_dp":
+            case "key_text_size_sp":
+            case "key_stroke_width_dp":
+            case "key_stroke_color":
+            case "key_color":
+            case "text_color":
+            case "accent_color":
+            case "bg_color":
+            case "dark":
+            case "amoled":
+            case "theme_kind":
+                // Only rebuild the dynamic rows once the keyboard panel has
+                // actually been inflated and its rows bound — otherwise the
+                // settings activity changing a colour before the keyboard
+                // first opens would NPE on uninstantiated layout fields.
+                if (rowLetters1 != null
+                        && (panelMode == PanelMode.KEYBOARD
+                            || panelMode == PanelMode.SYMBOLS
+                            || panelMode == PanelMode.EMOJI)) {
+                    buildQwertyRows();
+                    if (rowSymbols != null)  buildSymbolRow();
+                    if (rowSnippets != null) buildSnippetRow();
+                }
+                if (panelMode == PanelMode.EMOJI) refreshEmojiPanel();
+                if (panelMode == PanelMode.CLIPBOARD) refreshClipboardPanel();
+                applyTheme();
+                refreshSuggestions();
+                break;
+            case "kb_bg_mode":
+            case "kb_bg_gradient_start":
+            case "kb_bg_gradient_end":
+            case "kb_bg_image_uri":
+            case "bg_image_opacity":
+                applyTheme();
+                break;
+            case "show_pc_keys":
+                buildPcKeysRow();
+                applySuggestionVisibility();
+                break;
+            case "key_height_scale":
+                applyKeyboardHeight();
+                break;
+            default:
+                break;
+        }
     }
 
     /**
@@ -1354,6 +1442,13 @@ public class CodeKeysIME extends InputMethodService {
         EditorInfo ei = getCurrentInputEditorInfo();
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) { commitChar("\n"); return; }
+        // Treat the word about to be terminated by Enter as one the user
+        // confirmed — same signal as Space — so the personal dictionary keeps
+        // ranking it higher next time.
+        String pendingWord = inputEngine.currentWord();
+        if (!TextUtils.isEmpty(pendingWord) && pendingWord.length() >= 2) {
+            suggestionEngine.learn(pendingWord);
+        }
         int actionId = (ei != null) ? (ei.imeOptions & EditorInfo.IME_MASK_ACTION) : EditorInfo.IME_ACTION_UNSPECIFIED;
         boolean isMultiline = (ei != null) && ((ei.inputType & android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0);
         boolean noEnterAction = (ei != null) && ((ei.imeOptions & EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0);
