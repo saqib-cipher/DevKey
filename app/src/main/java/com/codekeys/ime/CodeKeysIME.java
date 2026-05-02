@@ -5,8 +5,11 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.PorterDuff;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
 import android.inputmethodservice.InputMethodService;
 import android.media.AudioManager;
 import android.os.Build;
@@ -102,6 +105,16 @@ public class CodeKeysIME extends InputMethodService {
     private PopupWindow activePreview;
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private int activeMetaState = 0;
+
+    // Online-suggestion plumbing — opt-in via the "online_suggestions" pref.
+    // We keep a single-thread executor so concurrent keystrokes don't fan out
+    // into a swarm of HTTP requests, and a "lastQueriedPrefix" guard so
+    // stale responses from earlier keystrokes never overwrite fresher local
+    // suggestions.
+    private final java.util.concurrent.ExecutorService onlineExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+    private String lastOnlinePrefix = "";
+    private final List<String> onlineExtras = new ArrayList<>();
 
     // ─── Clipboard surfacing ──────────────────────────────────────────────────
     /**
@@ -289,6 +302,7 @@ public class CodeKeysIME extends InputMethodService {
     public void onDestroy() {
         unregisterSystemClipboardListener();
         unregisterPrefsListener();
+        if (onlineExecutor != null) onlineExecutor.shutdownNow();
         super.onDestroy();
     }
 
@@ -613,6 +627,11 @@ public class CodeKeysIME extends InputMethodService {
             // doubles as an "back to keyboard" button — committing whitespace
             // there isn't what the user wants.
             if (panelMode == PanelMode.CLIPBOARD || panelMode == PanelMode.CURSOR) {
+                // Leaving cursor mode also resets the select anchor so the
+                // next entry starts fresh instead of carrying a stale
+                // selection origin from the previous session.
+                cursorSelectMode = false;
+                cursorSelectAnchor = -1;
                 switchPanel(PanelMode.KEYBOARD);
             } else {
                 onSpace();
@@ -1160,10 +1179,22 @@ public class CodeKeysIME extends InputMethodService {
     // ─── Cursor controller panel ─────────────────────────────────────────────
     /**
      * Tracks the in-panel "Select" toggle. While true, the four direction
-     * arrows extend the selection (KeyEvent meta = SHIFT) instead of moving
-     * the caret, mirroring how desktop keyboards handle Shift+Arrow.
+     * arrows extend the selection from {@link #cursorSelectAnchor} instead
+     * of moving the caret, mirroring how desktop keyboards handle
+     * Shift+Arrow.
+     *
+     * <p>Earlier versions sent SHIFT meta on the KeyEvent — many apps
+     * (Sketchware Pro's editor among them) don't honour software-keyboard
+     * meta states, leaving selection broken. We instead capture the caret
+     * at toggle-time as the anchor and call {@link InputConnection#setSelection}
+     * directly so selection is exact regardless of the host's input
+     * filters.
      */
     private boolean cursorSelectMode = false;
+    /** Anchor (caret position when select-mode was turned on) used as the
+     *  fixed end of {@link InputConnection#setSelection} calls. -1 when
+     *  select-mode is off. */
+    private int cursorSelectAnchor = -1;
 
     /**
      * Wires the cursor panel's buttons exactly once when the panel is first
@@ -1177,15 +1208,24 @@ public class CodeKeysIME extends InputMethodService {
         attachArrowHoldHandler(root.findViewById(R.id.cursor_btn_left),  KeyEvent.KEYCODE_DPAD_LEFT);
         attachArrowHoldHandler(root.findViewById(R.id.cursor_btn_right), KeyEvent.KEYCODE_DPAD_RIGHT);
 
-        Button selectToggle = root.findViewById(R.id.cursor_btn_select_toggle);
+        // Toggle now also captures the current caret position as a selection
+        // anchor — direction taps in select-mode pivot off this anchor via
+        // setSelection(), which works reliably across apps where bare
+        // SHIFT+arrow KeyEvents would be ignored.
+        View selectToggle = root.findViewById(R.id.cursor_btn_select_toggle);
         if (selectToggle != null) {
             selectToggle.setOnClickListener(v -> {
                 haptic(v);
                 cursorSelectMode = !cursorSelectMode;
+                if (cursorSelectMode) {
+                    cursorSelectAnchor = inputEngine.cursorPosition();
+                } else {
+                    cursorSelectAnchor = -1;
+                }
                 styleCursorPanel(cursorPanelView);
             });
         }
-        Button selectAll = root.findViewById(R.id.cursor_btn_select_all);
+        View selectAll = root.findViewById(R.id.cursor_btn_select_all);
         if (selectAll != null) {
             selectAll.setOnClickListener(v -> {
                 haptic(v);
@@ -1193,7 +1233,7 @@ public class CodeKeysIME extends InputMethodService {
                 if (ic != null) ic.performContextMenuAction(android.R.id.selectAll);
             });
         }
-        Button copy = root.findViewById(R.id.cursor_btn_copy);
+        View copy = root.findViewById(R.id.cursor_btn_copy);
         if (copy != null) {
             copy.setOnClickListener(v -> {
                 haptic(v);
@@ -1202,7 +1242,7 @@ public class CodeKeysIME extends InputMethodService {
                 captureSelectionToClipboard();
             });
         }
-        Button paste = root.findViewById(R.id.cursor_btn_paste);
+        View paste = root.findViewById(R.id.cursor_btn_paste);
         if (paste != null) {
             paste.setOnClickListener(v -> {
                 haptic(v);
@@ -1210,25 +1250,51 @@ public class CodeKeysIME extends InputMethodService {
                 if (ic != null) ic.performContextMenuAction(android.R.id.paste);
             });
         }
-        Button home = root.findViewById(R.id.cursor_btn_home);
+        View home = root.findViewById(R.id.cursor_btn_home);
         if (home != null) {
-            home.setOnClickListener(v -> { haptic(v); sendArrow(KeyEvent.KEYCODE_MOVE_HOME); });
+            home.setOnClickListener(v -> { haptic(v); sendCursorArrow(KeyEvent.KEYCODE_MOVE_HOME); });
         }
-        Button end = root.findViewById(R.id.cursor_btn_end);
+        View end = root.findViewById(R.id.cursor_btn_end);
         if (end != null) {
-            end.setOnClickListener(v -> { haptic(v); sendArrow(KeyEvent.KEYCODE_MOVE_END); });
+            end.setOnClickListener(v -> { haptic(v); sendCursorArrow(KeyEvent.KEYCODE_MOVE_END); });
+        }
+        // Document-level jumps (replace the old ABC button on the right
+        // column). text-start / text-end honour cursorSelectMode by routing
+        // through the same setSelection path as the arrows.
+        View textStart = root.findViewById(R.id.cursor_btn_text_start);
+        if (textStart != null) {
+            textStart.setOnClickListener(v -> { haptic(v); jumpToDocBoundary(true); });
+        }
+        View textEnd = root.findViewById(R.id.cursor_btn_text_end);
+        if (textEnd != null) {
+            textEnd.setOnClickListener(v -> { haptic(v); jumpToDocBoundary(false); });
         }
         View backspace = root.findViewById(R.id.cursor_btn_backspace);
         if (backspace != null) attachBackspaceHoldHandler(backspace);
+    }
 
-        Button close = root.findViewById(R.id.cursor_btn_close);
-        if (close != null) {
-            close.setOnClickListener(v -> {
-                haptic(v);
-                cursorSelectMode = false;
-                switchPanel(PanelMode.KEYBOARD);
-            });
+    /**
+     * Moves the caret (or extends selection from the anchor when select-mode
+     * is on) to the very first or last character of the editable text.
+     * Mirrors Ctrl+Home / Ctrl+End from a desktop keyboard.
+     */
+    private void jumpToDocBoundary(boolean toStart) {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+        ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
+        if (et == null || et.text == null) {
+            // Field doesn't expose extracted text — fall back to the closest
+            // KeyEvent. ctrl-home / ctrl-end aren't standard chords, so
+            // jumping by sending many MOVE_HOME / MOVE_END is unreliable;
+            // a single MOVE event at least matches Home/End behaviour.
+            sendCursorArrow(toStart ? KeyEvent.KEYCODE_MOVE_HOME : KeyEvent.KEYCODE_MOVE_END);
+            return;
         }
+        int target = toStart ? 0 : et.text.length();
+        int anchor = cursorSelectMode
+                ? (cursorSelectAnchor < 0 ? et.selectionStart : cursorSelectAnchor)
+                : target;
+        ic.setSelection(anchor, target);
     }
 
     /**
@@ -1268,17 +1334,97 @@ public class CodeKeysIME extends InputMethodService {
         });
     }
 
-    /** Sends an arrow event, applying SHIFT when select-mode is on so the
-     *  caret extends the selection instead of moving alone. */
+    /**
+     * Moves the caret one step in {@code keyCode}'s direction.
+     *
+     * <p>When {@link #cursorSelectMode} is on, horizontal moves /
+     * line-jump moves are routed through {@link InputConnection#setSelection}
+     * so the selection extends reliably against the captured anchor — many
+     * apps simply ignore SHIFT meta on software KeyEvents. Vertical moves
+     * (up/down) still need a real key event because the host has to walk
+     * the line layout to know where the caret lands; we wrap them with
+     * SHIFT-LEFT down/up so apps that DO honour meta still get a proper
+     * shift-modified event.
+     */
     private void sendCursorArrow(int keyCode) {
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) return;
-        int meta = cursorSelectMode ? KeyEvent.META_SHIFT_ON | KeyEvent.META_SHIFT_LEFT_ON : 0;
         long now = android.os.SystemClock.uptimeMillis();
+
+        if (cursorSelectMode) {
+            ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
+            if (et != null && et.text != null) {
+                int textLen = et.text.length();
+                int anchor = (cursorSelectAnchor < 0) ? et.selectionStart : cursorSelectAnchor;
+                if (cursorSelectAnchor < 0) cursorSelectAnchor = anchor;
+                // The "moving" end of the selection — start fresh from the
+                // current selectionEnd so consecutive arrow taps grow / shrink
+                // the selection by one character at a time.
+                int movingEnd = (et.selectionEnd >= 0) ? et.selectionEnd : et.selectionStart;
+
+                int newEnd;
+                switch (keyCode) {
+                    case KeyEvent.KEYCODE_DPAD_LEFT:
+                        newEnd = Math.max(0, movingEnd - 1);
+                        break;
+                    case KeyEvent.KEYCODE_DPAD_RIGHT:
+                        newEnd = Math.min(textLen, movingEnd + 1);
+                        break;
+                    case KeyEvent.KEYCODE_MOVE_HOME:
+                        // Walk back to the previous newline (or document start).
+                        newEnd = lineStartIndex(et.text.toString(), movingEnd);
+                        break;
+                    case KeyEvent.KEYCODE_MOVE_END:
+                        newEnd = lineEndIndex(et.text.toString(), movingEnd);
+                        break;
+                    case KeyEvent.KEYCODE_DPAD_UP:
+                    case KeyEvent.KEYCODE_DPAD_DOWN:
+                    default:
+                        // Fall through to the KeyEvent path below — vertical
+                        // navigation needs the host to compute layout offsets.
+                        sendShiftedKey(ic, keyCode, now);
+                        return;
+                }
+                ic.setSelection(anchor, newEnd);
+                return;
+            }
+        }
+
+        // Plain caret move (or fallback when extracted text isn't available).
+        ic.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0));
+        ic.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP,   keyCode, 0));
+    }
+
+    /** Sends {@code keyCode} wrapped in explicit SHIFT-LEFT down/up events
+     *  plus META_SHIFT_ON on the inner key, which is the most permissive
+     *  shape across input filters. */
+    private void sendShiftedKey(InputConnection ic, int keyCode, long now) {
+        int meta = KeyEvent.META_SHIFT_ON | KeyEvent.META_SHIFT_LEFT_ON;
+        ic.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN,
+                KeyEvent.KEYCODE_SHIFT_LEFT, 0));
         ic.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN,
                 keyCode, 0, meta));
         ic.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP,
                 keyCode, 0, meta));
+        ic.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP,
+                KeyEvent.KEYCODE_SHIFT_LEFT, 0));
+    }
+
+    /** First index on the same logical line as {@code pos} — i.e. one past
+     *  the previous {@code '\n'}, or 0. */
+    private static int lineStartIndex(String text, int pos) {
+        if (pos <= 0) return 0;
+        int i = Math.min(pos, text.length()) - 1;
+        while (i >= 0 && text.charAt(i) != '\n') i--;
+        return i + 1;
+    }
+
+    /** First index AT or AFTER {@code pos} that is a {@code '\n'}, else
+     *  the text length. */
+    private static int lineEndIndex(String text, int pos) {
+        int i = Math.max(0, pos);
+        while (i < text.length() && text.charAt(i) != '\n') i++;
+        return i;
     }
 
     /**
@@ -1295,40 +1441,29 @@ public class CodeKeysIME extends InputMethodService {
         int strokeW = dp(getKeyStrokeWidthDp());
         int strokeC = getKeyStrokeColor();
 
-        int[] plainIds = {
+        // All cursor-panel buttons are ImageButtons now, so they share the
+        // same arrow-button styler (rounded fill + tinted icon) — no
+        // separate text-button styling is needed.
+        int[] iconIds = {
                 R.id.cursor_btn_select_all, R.id.cursor_btn_copy, R.id.cursor_btn_paste,
-                R.id.cursor_btn_home, R.id.cursor_btn_end
+                R.id.cursor_btn_home, R.id.cursor_btn_end,
+                R.id.cursor_btn_text_start, R.id.cursor_btn_text_end,
+                R.id.cursor_btn_up, R.id.cursor_btn_down,
+                R.id.cursor_btn_left, R.id.cursor_btn_right,
+                R.id.cursor_btn_backspace
         };
-        for (int id : plainIds) {
-            styleActionButton(root.findViewById(id), keyBg, textCol, radius, strokeW, strokeC);
+        for (int id : iconIds) {
+            ImageButton ib = root.findViewById(id);
+            if (ib != null) styleArrowButton(ib, keyBg, textCol, radius, strokeW, strokeC);
         }
-        // D-pad arrows — use the same arrow-button styler so their tints
-        // track the current text colour without leaving the icon plain black.
-        styleArrowButton((ImageButton) root.findViewById(R.id.cursor_btn_up),
-                keyBg, textCol, radius, strokeW, strokeC);
-        styleArrowButton((ImageButton) root.findViewById(R.id.cursor_btn_down),
-                keyBg, textCol, radius, strokeW, strokeC);
-        styleArrowButton((ImageButton) root.findViewById(R.id.cursor_btn_left),
-                keyBg, textCol, radius, strokeW, strokeC);
-        styleArrowButton((ImageButton) root.findViewById(R.id.cursor_btn_right),
-                keyBg, textCol, radius, strokeW, strokeC);
-        styleArrowButton((ImageButton) root.findViewById(R.id.cursor_btn_backspace),
-                keyBg, textCol, radius, strokeW, strokeC);
 
         // The Select toggle reflects its on/off state with an accent fill so
         // the user can tell at a glance whether arrows will extend selection.
-        Button selectToggle = root.findViewById(R.id.cursor_btn_select_toggle);
+        ImageButton selectToggle = root.findViewById(R.id.cursor_btn_select_toggle);
         if (selectToggle != null) {
             int fill = cursorSelectMode ? blend(keyBg, accent, 0.55f) : keyBg;
             int fg   = cursorSelectMode ? 0xFF000000 : textCol;
-            styleActionButton(selectToggle, fill, fg, radius, strokeW, strokeC);
-            selectToggle.setText(cursorSelectMode ? "Selecting…" : "Select");
-        }
-        // Close uses the accent text colour (matches the enter button) since
-        // it's the primary "exit" affordance for this panel.
-        Button close = root.findViewById(R.id.cursor_btn_close);
-        if (close != null) {
-            styleActionButton(close, keyBg, accent, radius, strokeW, strokeC);
+            styleArrowButton(selectToggle, fill, fg, radius, strokeW, strokeC);
         }
     }
 
@@ -1367,6 +1502,28 @@ public class CodeKeysIME extends InputMethodService {
         rowSuggestions.removeAllViews();
         String word = inputEngine.currentWord();
         currentSuggestions = suggestionEngine.compute(word, effectiveSnippets());
+
+        // If the user has opted in to online suggestions, kick off a fetch
+        // for the current prefix and merge the results in once the network
+        // returns. Stale prefixes are dropped on arrival so we never paint
+        // suggestions from a prior keystroke.
+        if (prefs.getBoolean("online_suggestions", false)
+                && word != null && word.length() >= 2) {
+            // Splice any previously-fetched extras for the same prefix in
+            // so the user sees them on the very next refresh without
+            // waiting for another fetch.
+            if (word.equalsIgnoreCase(lastOnlinePrefix) && !onlineExtras.isEmpty()) {
+                ArrayList<String> merged = new ArrayList<>(currentSuggestions);
+                for (String extra : onlineExtras) {
+                    if (!containsIgnoreCase(merged, extra)) merged.add(extra);
+                }
+                currentSuggestions = merged;
+            }
+            fetchOnlineSuggestions(word);
+        } else {
+            onlineExtras.clear();
+            lastOnlinePrefix = "";
+        }
         int textCol = getKeyTextColor();
         int accent = getAccentColor();
         int chipBg = blend(getKeyBgColor(), 0xFF000000, 0.18f);
@@ -1437,6 +1594,76 @@ public class CodeKeysIME extends InputMethodService {
             });
             rowSuggestions.addView(chip);
         }
+    }
+
+    /**
+     * Fires an async fetch against Google's public suggest endpoint and,
+     * on success, merges the returned strings into {@link #onlineExtras}
+     * before triggering one more {@link #refreshSuggestions} pass. The
+     * request lives on a single-thread executor so rapid typing collapses
+     * to "fetch the latest prefix" rather than fanning out per keystroke.
+     */
+    private void fetchOnlineSuggestions(final String prefix) {
+        if (prefix == null || prefix.isEmpty()) return;
+        final String snapshot = prefix;
+        onlineExecutor.execute(() -> {
+            ArrayList<String> result = new ArrayList<>();
+            try {
+                String url = "https://suggestqueries.google.com/complete/search?client=firefox&q="
+                        + java.net.URLEncoder.encode(snapshot, "UTF-8");
+                java.net.HttpURLConnection conn =
+                        (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+                conn.setConnectTimeout(2500);
+                conn.setReadTimeout(2500);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 CodeKeysIME");
+                int code = conn.getResponseCode();
+                if (code != 200) { conn.disconnect(); return; }
+                java.io.InputStream is = conn.getInputStream();
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[1024];
+                int n;
+                while ((n = is.read(buf)) != -1) out.write(buf, 0, n);
+                is.close();
+                conn.disconnect();
+                String body = out.toString("UTF-8");
+                // Firefox-format response: ["query",["s1","s2", ...]]
+                int arrStart = body.indexOf('[', body.indexOf('[') + 1);
+                int arrEnd = body.lastIndexOf(']');
+                if (arrStart < 0 || arrEnd <= arrStart) return;
+                String inner = body.substring(arrStart + 1, arrEnd);
+                // Quick parse: split on quoted strings rather than pulling in
+                // a JSON dependency.
+                java.util.regex.Matcher m =
+                        java.util.regex.Pattern.compile("\"([^\"]+)\"").matcher(inner);
+                while (m.find() && result.size() < 6) {
+                    String s = m.group(1);
+                    if (s != null && !s.isEmpty()) result.add(s);
+                }
+            } catch (Exception ignored) {
+                // Network errors are silent — the user already has local
+                // suggestions; online is a bonus, not a requirement.
+                return;
+            }
+            final ArrayList<String> finalResult = result;
+            uiHandler.post(() -> {
+                // Drop the response if the user has typed past this prefix.
+                String currentWord = inputEngine.currentWord();
+                if (currentWord == null || !currentWord.equalsIgnoreCase(snapshot)) return;
+                onlineExtras.clear();
+                onlineExtras.addAll(finalResult);
+                lastOnlinePrefix = snapshot;
+                // Re-render so the merged list shows up.
+                refreshSuggestions();
+            });
+        });
+    }
+
+    private static boolean containsIgnoreCase(List<String> list, String s) {
+        if (list == null || s == null) return false;
+        for (String x : list) {
+            if (x != null && x.equalsIgnoreCase(s)) return true;
+        }
+        return false;
     }
 
     /**
@@ -2350,6 +2577,13 @@ public class CodeKeysIME extends InputMethodService {
         // active, so the user has a visible "pressed" indicator.
         styleActionButton(btnComma,  keyBg, textCol, radius, strokeW, strokeC);
         styleActionButton(btnPeriod, keyBg, textCol, radius, strokeW, strokeC);
+        // Hint the long-press affordance: faded settings icon behind comma,
+        // faded emoji icon behind period — only meaningful in Gboard layout
+        // because that's where these buttons are visible.
+        if (prefs.getBoolean("gboard_style_row", false)) {
+            applyFadedIconHint(btnComma,  R.drawable.settings_2, textCol);
+            applyFadedIconHint(btnPeriod, R.drawable.mood_smile, textCol);
+        }
         styleActionButton(btnCursorPanel,
                 panelMode == PanelMode.CURSOR ? accent : keyBg,
                 panelMode == PanelMode.CURSOR ? 0xFF000000 : textCol,
@@ -2421,6 +2655,60 @@ public class CodeKeysIME extends InputMethodService {
         if (b == null) return;
         b.setBackground(ui.roundedFill(bg, radius, strokeW, strokeC));
         b.setColorFilter(tint);
+    }
+
+    /**
+     * Overlays a faded icon inside the button's rounded background so the
+     * user can see the long-press affordance at a glance (e.g. settings
+     * icon on the comma key, emoji icon on the period key). The icon is
+     * positioned in the top-right corner of the button, tinted to the
+     * current key text colour and drawn at ~24% alpha so it reads as a
+     * watermark rather than the primary glyph.
+     *
+     * Posts the work because the button's width/height are needed to
+     * compute the inset; on first style-pass the layout may not have
+     * happened yet.
+     */
+    private void applyFadedIconHint(Button button, int iconResId, int iconColor) {
+        if (button == null) return;
+        button.post(() -> {
+            Drawable bg = button.getBackground();
+            if (bg == null) return;
+            // If a prior call already wrapped the background in a
+            // LayerDrawable, peel back to the underlying rounded fill so we
+            // don't end up with nested layers compounding on every theme
+            // re-apply.
+            Drawable base = bg;
+            if (bg instanceof LayerDrawable) {
+                LayerDrawable existing = (LayerDrawable) bg;
+                if (existing.getNumberOfLayers() > 0) {
+                    base = existing.getDrawable(0);
+                }
+            }
+            Drawable icon;
+            try {
+                icon = getResources().getDrawable(iconResId);
+            } catch (Exception e) {
+                return;
+            }
+            if (icon == null) return;
+            icon = icon.mutate();
+            icon.setColorFilter(iconColor, PorterDuff.Mode.SRC_IN);
+            icon.setAlpha(70); // faded watermark
+            int iconSize = dp(14);
+            int w = button.getWidth();
+            int h = button.getHeight();
+            if (w <= 0 || h <= 0) return;
+            int marginH = dp(4);
+            int marginV = dp(4);
+            int left = Math.max(0, w - marginH - iconSize);
+            int top = marginV;
+            int right = marginH;
+            int bottom = Math.max(0, h - marginV - iconSize);
+            LayerDrawable layered = new LayerDrawable(new Drawable[]{ base, icon });
+            layered.setLayerInset(1, left, top, right, bottom);
+            button.setBackground(layered);
+        });
     }
 
     /** Returns the user-configured key-height multiplier, clamped to a sensible band. */

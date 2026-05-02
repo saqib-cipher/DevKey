@@ -19,12 +19,22 @@
     android:fillViewport="true"
     android:background="#1A1A2E">
 
+    <!--
+        descendantFocusability + focusableInTouchMode together steal initial
+        focus away from EditText children (edit_preview / edit_new_lang) so
+        the soft keyboard does not auto-pop when the activity opens or after
+        a theme rebuild. Users still get focus + keyboard the moment they
+        actually tap into one of the EditText fields.
+    -->
     <LinearLayout
         android:id="@+id/settings_root"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:padding="20dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:descendantFocusability="beforeDescendants">
 
         <!-- ══════════════════════════════════════════════════════
              Title bar

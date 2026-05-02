@@ -80,11 +80,34 @@ final class SuggestionEngine {
             }
         }
 
-        // 2. Single-best typo fix.
+        // 2. Single-best typo fix — first the curated map, then a fuzzy
+        //    fallback against the built-in dictionary for short prefixes
+        //    (edit-distance 1) so common typos like "thnk" → "think" or
+        //    "recieve" → "receive" still surface even if they aren't in
+        //    the curated table.
         String fix = COMMON_TYPOS.get(lower);
+        if (fix == null) fix = fuzzyTypoFix(lower);
         if (fix != null) {
             String fixCased = applyCasing(fix, allUpper, firstUpper);
             if (!out.contains(fixCased)) out.add(fixCased);
+        }
+
+        // 2b. Compound-word splitter — common no-space jams like
+        //     "androidstudio" → "android studio". Surfaced near the top so
+        //     the user can confirm the corrected spacing in one tap.
+        String split = COMPOUND_WORDS.get(lower);
+        if (split != null) {
+            String splitCased = applyCasing(split, allUpper, firstUpper);
+            if (!out.contains(splitCased)) out.add(splitCased);
+        } else {
+            // Generic two-word split: try every cut point and check both
+            // halves against the dictionary. Picks the longest valid split
+            // so we don't over-eagerly split short prefixes.
+            String generic = genericSplit(lower);
+            if (generic != null) {
+                String genericCased = applyCasing(generic, allUpper, firstUpper);
+                if (!out.contains(genericCased)) out.add(genericCased);
+            }
         }
 
         // 3. Personal-dictionary matches first — words the user actually uses
@@ -210,5 +233,205 @@ final class SuggestionEngine {
         COMMON_TYPOS.put("fucntion", "function");
         COMMON_TYPOS.put("flase", "false");
         COMMON_TYPOS.put("ture", "true");
+        COMMON_TYPOS.put("thier", "their");
+        COMMON_TYPOS.put("wich", "which");
+        COMMON_TYPOS.put("wierd", "weird");
+        COMMON_TYPOS.put("alot", "a lot");
+        COMMON_TYPOS.put("becuase", "because");
+        COMMON_TYPOS.put("becouse", "because");
+        COMMON_TYPOS.put("acheive", "achieve");
+        COMMON_TYPOS.put("beleive", "believe");
+        COMMON_TYPOS.put("freind", "friend");
+        COMMON_TYPOS.put("tommorow", "tomorrow");
+        COMMON_TYPOS.put("tomarrow", "tomorrow");
+        COMMON_TYPOS.put("alright", "alright");
+        COMMON_TYPOS.put("alright", "alright");
+        COMMON_TYPOS.put("occured", "occurred");
+        COMMON_TYPOS.put("succesful", "successful");
+        COMMON_TYPOS.put("succesfull", "successful");
+        COMMON_TYPOS.put("neccessary", "necessary");
+        COMMON_TYPOS.put("neccesary", "necessary");
+        COMMON_TYPOS.put("calender", "calendar");
+        COMMON_TYPOS.put("goverment", "government");
+        COMMON_TYPOS.put("enviroment", "environment");
+        COMMON_TYPOS.put("publically", "publicly");
+        COMMON_TYPOS.put("yhe", "the");
+        COMMON_TYPOS.put("hte", "the");
+        COMMON_TYPOS.put("waht", "what");
+        COMMON_TYPOS.put("taht", "that");
+        COMMON_TYPOS.put("youre", "you're");
+        COMMON_TYPOS.put("dont", "don't");
+        COMMON_TYPOS.put("cant", "can't");
+        COMMON_TYPOS.put("wont", "won't");
+        COMMON_TYPOS.put("isnt", "isn't");
+        COMMON_TYPOS.put("didnt", "didn't");
+        COMMON_TYPOS.put("doesnt", "doesn't");
+        COMMON_TYPOS.put("wasnt", "wasn't");
+        COMMON_TYPOS.put("werent", "weren't");
+        COMMON_TYPOS.put("hasnt", "hasn't");
+        COMMON_TYPOS.put("havent", "haven't");
+        COMMON_TYPOS.put("im", "I'm");
+        COMMON_TYPOS.put("ive", "I've");
+        COMMON_TYPOS.put("ill", "I'll");
+        COMMON_TYPOS.put("thnak", "thank");
+        COMMON_TYPOS.put("thnk", "think");
+        COMMON_TYPOS.put("knwo", "know");
+        COMMON_TYPOS.put("liek", "like");
+        COMMON_TYPOS.put("becuse", "because");
+        COMMON_TYPOS.put("strign", "string");
+        COMMON_TYPOS.put("lenght", "length");
+        COMMON_TYPOS.put("widht", "width");
+        COMMON_TYPOS.put("hieght", "height");
+        COMMON_TYPOS.put("priavte", "private");
+        COMMON_TYPOS.put("pulbic", "public");
+        COMMON_TYPOS.put("statci", "static");
+        COMMON_TYPOS.put("voide", "void");
+        COMMON_TYPOS.put("contect", "context");
+        COMMON_TYPOS.put("activty", "activity");
+        COMMON_TYPOS.put("layoyt", "layout");
+        COMMON_TYPOS.put("buton", "button");
+        COMMON_TYPOS.put("ediittext", "edittext");
+        COMMON_TYPOS.put("textveiw", "textview");
     }
+
+    /** Common compound words people type without spaces. */
+    private static final Map<String, String> COMPOUND_WORDS = new LinkedHashMap<>();
+    static {
+        COMPOUND_WORDS.put("androidstudio",   "android studio");
+        COMPOUND_WORDS.put("sketchwarepro",   "sketchware pro");
+        COMPOUND_WORDS.put("sketchware",      "sketchware");
+        COMPOUND_WORDS.put("playstore",       "play store");
+        COMPOUND_WORDS.put("googleplay",      "google play");
+        COMPOUND_WORDS.put("appstore",        "app store");
+        COMPOUND_WORDS.put("youtuber",        "youtuber");
+        COMPOUND_WORDS.put("youtubechannel",  "youtube channel");
+        COMPOUND_WORDS.put("visualstudio",    "visual studio");
+        COMPOUND_WORDS.put("vscode",          "vs code");
+        COMPOUND_WORDS.put("stackoverflow",   "stack overflow");
+        COMPOUND_WORDS.put("github",          "github");
+        COMPOUND_WORDS.put("opensource",      "open source");
+        COMPOUND_WORDS.put("openai",          "open ai");
+        COMPOUND_WORDS.put("chatgpt",         "chat gpt");
+        COMPOUND_WORDS.put("javascript",      "javascript");
+        COMPOUND_WORDS.put("typescript",      "typescript");
+        COMPOUND_WORDS.put("nodejs",          "node js");
+        COMPOUND_WORDS.put("reactnative",     "react native");
+        COMPOUND_WORDS.put("nextjs",          "next js");
+        COMPOUND_WORDS.put("realtime",        "real time");
+        COMPOUND_WORDS.put("everyday",        "every day");
+        COMPOUND_WORDS.put("everytime",       "every time");
+        COMPOUND_WORDS.put("alot",            "a lot");
+        COMPOUND_WORDS.put("infact",          "in fact");
+        COMPOUND_WORDS.put("incase",          "in case");
+        COMPOUND_WORDS.put("aswell",          "as well");
+        COMPOUND_WORDS.put("alright",         "all right");
+        COMPOUND_WORDS.put("eachother",       "each other");
+        COMPOUND_WORDS.put("inorder",         "in order");
+        COMPOUND_WORDS.put("highschool",      "high school");
+        COMPOUND_WORDS.put("backend",         "back end");
+        COMPOUND_WORDS.put("frontend",        "front end");
+        COMPOUND_WORDS.put("fullstack",       "full stack");
+        COMPOUND_WORDS.put("offline",         "offline");
+        COMPOUND_WORDS.put("online",          "online");
+        COMPOUND_WORDS.put("login",           "log in");
+        COMPOUND_WORDS.put("logout",          "log out");
+        COMPOUND_WORDS.put("signup",          "sign up");
+        COMPOUND_WORDS.put("setup",           "set up");
+        COMPOUND_WORDS.put("homepage",        "home page");
+        COMPOUND_WORDS.put("webpage",         "web page");
+        COMPOUND_WORDS.put("website",         "website");
+        COMPOUND_WORDS.put("youtubevideo",    "youtube video");
+        COMPOUND_WORDS.put("liveaction",      "live action");
+    }
+
+    /**
+     * Tries to pick a single best dictionary word that is at edit distance
+     * 1 from {@code lower}. Returns {@code null} if no clear single fix
+     * exists (we want exactly-one candidate so the suggestion strip stays
+     * trustworthy — multiple equal-distance matches would be guesses).
+     *
+     * Bounded to short words because Levenshtein over the whole dictionary
+     * is O(N · L²) and we only run on every keystroke.
+     */
+    private static String fuzzyTypoFix(String lower) {
+        if (lower == null) return null;
+        int len = lower.length();
+        // Only correct meaningful, short, all-letter tokens. 3 chars is the
+        // floor where a 1-edit fix is more likely than a legitimate prefix.
+        if (len < 4 || len > 10) return null;
+        for (int i = 0; i < len; i++) {
+            if (!Character.isLetter(lower.charAt(i))) return null;
+        }
+        // If the literal word is already in the dictionary, it's not a typo.
+        for (String w : CommonWords.all()) {
+            if (w.equals(lower)) return null;
+        }
+        String best = null;
+        int bestCount = 0;
+        for (String w : CommonWords.all()) {
+            int wl = w.length();
+            if (Math.abs(wl - len) > 1) continue;
+            if (editDistanceWithin1(lower, w)) {
+                if (best == null) {
+                    best = w;
+                    bestCount = 1;
+                } else {
+                    bestCount++;
+                    if (bestCount > 3) return null; // ambiguous
+                }
+            }
+        }
+        return best;
+    }
+
+    /** True when {@code a} and {@code b} differ by at most one insertion,
+     *  deletion, or substitution. Tight, allocation-free check. */
+    private static boolean editDistanceWithin1(String a, String b) {
+        int la = a.length(), lb = b.length();
+        if (Math.abs(la - lb) > 1) return false;
+        if (la > lb) { String t = a; a = b; b = t; int ti = la; la = lb; lb = ti; }
+        // Now la <= lb, diff <= 1.
+        int i = 0, j = 0, edits = 0;
+        while (i < la && j < lb) {
+            if (a.charAt(i) == b.charAt(j)) {
+                i++;
+                j++;
+            } else {
+                if (++edits > 1) return false;
+                if (la == lb) {
+                    i++; j++; // substitution
+                } else {
+                    j++; // insertion in b
+                }
+            }
+        }
+        if (j < lb) edits += (lb - j);
+        return edits <= 1 && !(la == lb && edits == 0);
+    }
+
+    /** Splits a no-space jam into "word1 word2" if both halves are
+     *  dictionary words and each is ≥3 chars. Returns null otherwise. */
+    private static String genericSplit(String lower) {
+        if (lower == null || lower.length() < 6) return null;
+        // Build a quick lookup so we don't pay O(N) per cut.
+        java.util.HashSet<String> dict = DICT_SET;
+        String best = null;
+        int bestLen = 0;
+        for (int cut = 3; cut <= lower.length() - 3; cut++) {
+            String left = lower.substring(0, cut);
+            String right = lower.substring(cut);
+            if (dict.contains(left) && dict.contains(right)) {
+                int score = Math.min(left.length(), right.length());
+                if (score > bestLen) {
+                    best = left + " " + right;
+                    bestLen = score;
+                }
+            }
+        }
+        return best;
+    }
+
+    /** Lazily-built set view of {@link CommonWords#all()} for O(1) lookups
+     *  by the compound-split helper. */
+    private static final java.util.HashSet<String> DICT_SET = new java.util.HashSet<>(CommonWords.all());
 }

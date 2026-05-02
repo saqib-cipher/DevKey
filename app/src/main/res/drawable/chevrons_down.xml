@@ -1,0 +1,17 @@
+<!--
+    chevrons_down.xml — Tabler "chevrons-down" glyph (double caret pointing
+    down). Used on the cursor panel as the "jump to last position of text"
+    button, mirroring Ctrl+End on a desktop keyboard.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#00000000"
+        android:pathData="M7 7l5 5l5 -5"
+        android:strokeColor="#FF000000" android:strokeWidth="2.0"
+        android:strokeLineCap="round" android:strokeLineJoin="round"/>
+    <path android:fillColor="#00000000"
+        android:pathData="M7 13l5 5l5 -5"
+        android:strokeColor="#FF000000" android:strokeWidth="2.0"
+        android:strokeLineCap="round" android:strokeLineJoin="round"/>
+</vector>

@@ -8,15 +8,19 @@
     touch target. Each direction repeats while held (the IME attaches a
     long-press handler in code, mirroring the backspace pattern).
 
-    Layout:
+    Layout (every button is now an ImageButton tinted at runtime):
       ┌──────────────┬────────┬──────────────┐
-      │   Select ◐   │   ▲    │   Home  ⇤    │
-      │              ├────────┤              │
-      │              │   ◀    │   ▶          │
-      │   Copy ⧉     │        │   End   ⇥    │
-      │              ├────────┤              │
-      │   Paste ⎘    │   ▼    │   ↵ keyboard │
+      │  text-cursor │   ▲    │   ⤒ doc top  │
+      │  ▢ all       ├────────┤   |← line s. │
+      │  ⧉ copy      │  ◀  ▶  │   →| line e. │
+      │  ⎘ paste     │   ▼    │   ⤓ doc end  │
+      │              │        │   ⌫ backsp.  │
       └──────────────┴────────┴──────────────┘
+
+    The "ABC — back to keyboard" affordance lives on the bottom action
+    row's space bar (it's relabelled while CURSOR mode is active), so the
+    panel itself doesn't need a dedicated close button. Tapping space
+    returns to the keyboard panel.
 
     All colors are baseline #252545 / #E8E8FF — Java overrides them at
     runtime to track the user's accent + key colors, just like the
@@ -37,52 +41,52 @@
         android:orientation="vertical"
         android:layout_marginEnd="4dp">
 
-        <Button
+        <ImageButton
             android:id="@+id/cursor_btn_select_toggle"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:layout_marginBottom="3dp"
-            android:text="Select"
-            android:textAllCaps="false"
-            android:textSize="14sp"
-            android:textColor="#E8E8FF"
-            android:background="#252545" />
+            android:src="@drawable/text_select"
+            android:scaleType="fitCenter"
+            android:padding="14dp"
+            android:background="#252545"
+            android:contentDescription="Toggle selection mode" />
 
-        <Button
+        <ImageButton
             android:id="@+id/cursor_btn_select_all"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:layout_marginBottom="3dp"
-            android:text="Select all"
-            android:textAllCaps="false"
-            android:textSize="13sp"
-            android:textColor="#E8E8FF"
-            android:background="#252545" />
+            android:src="@drawable/select_all"
+            android:scaleType="fitCenter"
+            android:padding="14dp"
+            android:background="#252545"
+            android:contentDescription="Select all" />
 
-        <Button
+        <ImageButton
             android:id="@+id/cursor_btn_copy"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:layout_marginBottom="3dp"
-            android:text="Copy"
-            android:textAllCaps="false"
-            android:textSize="13sp"
-            android:textColor="#E8E8FF"
-            android:background="#252545" />
+            android:src="@drawable/copy"
+            android:scaleType="fitCenter"
+            android:padding="14dp"
+            android:background="#252545"
+            android:contentDescription="Copy" />
 
-        <Button
+        <ImageButton
             android:id="@+id/cursor_btn_paste"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:text="Paste"
-            android:textAllCaps="false"
-            android:textSize="13sp"
-            android:textColor="#E8E8FF"
-            android:background="#252545" />
+            android:src="@drawable/clipboard_paste"
+            android:scaleType="fitCenter"
+            android:padding="14dp"
+            android:background="#252545"
+            android:contentDescription="Paste" />
     </LinearLayout>
 
     <!-- ── Center column: D-pad ── -->
@@ -109,7 +113,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1"
+            android:layout_weight="2"
             android:layout_marginBottom="3dp"
             android:orientation="horizontal">
 
@@ -149,7 +153,10 @@
             android:contentDescription="Down" />
     </LinearLayout>
 
-    <!-- ── Right column: line jump + close ── -->
+    <!-- ── Right column: jump targets + backspace ──
+         text-start / text-end are the document-level Ctrl+Home /
+         Ctrl+End equivalents; line-start / line-end keep the
+         move-Home / move-End behaviour for line-level navigation. -->
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
@@ -157,52 +164,63 @@
         android:orientation="vertical"
         android:layout_marginStart="4dp">
 
-        <Button
+        <ImageButton
+            android:id="@+id/cursor_btn_text_start"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:src="@drawable/chevrons_up"
+            android:scaleType="fitCenter"
+            android:padding="14dp"
+            android:background="#252545"
+            android:contentDescription="Move cursor to first character" />
+
+        <ImageButton
             android:id="@+id/cursor_btn_home"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:layout_marginBottom="3dp"
-            android:text="Home"
-            android:textAllCaps="false"
-            android:textSize="13sp"
-            android:textColor="#E8E8FF"
-            android:background="#252545" />
+            android:src="@drawable/line_start"
+            android:scaleType="fitCenter"
+            android:padding="14dp"
+            android:background="#252545"
+            android:contentDescription="Line start" />
 
-        <Button
+        <ImageButton
             android:id="@+id/cursor_btn_end"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:layout_marginBottom="3dp"
-            android:text="End"
-            android:textAllCaps="false"
-            android:textSize="13sp"
-            android:textColor="#E8E8FF"
-            android:background="#252545" />
+            android:src="@drawable/line_end"
+            android:scaleType="fitCenter"
+            android:padding="14dp"
+            android:background="#252545"
+            android:contentDescription="Line end" />
+
+        <ImageButton
+            android:id="@+id/cursor_btn_text_end"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:src="@drawable/chevrons_down"
+            android:scaleType="fitCenter"
+            android:padding="14dp"
+            android:background="#252545"
+            android:contentDescription="Move cursor to last position" />
 
         <ImageButton
             android:id="@+id/cursor_btn_backspace"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:layout_marginBottom="3dp"
             android:src="@drawable/backspace"
             android:scaleType="fitCenter"
             android:padding="12dp"
             android:background="#252545"
             android:contentDescription="Backspace" />
-
-        <Button
-            android:id="@+id/cursor_btn_close"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:text="ABC"
-            android:textAllCaps="false"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:textColor="#00E5FF"
-            android:background="#252545" />
     </LinearLayout>
 </LinearLayout>

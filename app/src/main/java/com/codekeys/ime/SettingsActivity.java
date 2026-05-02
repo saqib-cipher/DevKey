@@ -120,6 +120,13 @@ public class SettingsActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // Keep the soft keyboard hidden on launch + theme rebuilds. The
+        // settings_root LinearLayout grabs initial focus via
+        // descendantFocusability, so editPreview / editNewLang only get
+        // focus (and the keyboard) when the user actually taps into them.
+        getWindow().setSoftInputMode(
+                android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
+                | android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         prefs = getSharedPreferences("codekeys_prefs", MODE_PRIVATE);
         // Seed defaults from assets/settings_defaults.json on first launch.
         AssetDefaults.seedDefaults(this, prefs);
@@ -130,6 +137,23 @@ public class SettingsActivity extends AppCompatActivity {
         bindViews();
         applyTheme();
         wireListeners();
+        renderPreferences();
+        renderThemes();
+        renderLanguages();
+        renderCustomLanguages();
+        renderSnippetReference();
+    }
+
+    /**
+     * Re-paints the static layout chrome and rebuilds the dynamic content
+     * containers so a theme/preset change is reflected without calling
+     * {@link #recreate()}. Recreating the activity scrolls the user back to
+     * the top and gives focus to the first EditText (popping the keyboard);
+     * applying changes in place keeps both the scroll position and the
+     * EditText state intact, so the live preview field stays where it was.
+     */
+    private void applyThemeAndRerender() {
+        applyTheme();
         renderPreferences();
         renderThemes();
         renderLanguages();
@@ -203,6 +227,9 @@ public class SettingsActivity extends AppCompatActivity {
         btnReset.setOnClickListener(v -> {
             prefs.edit().clear().apply();
             Toast.makeText(this, "Settings reset.", Toast.LENGTH_SHORT).show();
+            // Reset is a wholesale wipe (incl. seeded defaults), so a full
+            // recreate() is fine here — the user expects to be returned to
+            // a fresh state and nothing useful needs preserving.
             recreate();
         });
 
@@ -570,7 +597,7 @@ public class SettingsActivity extends AppCompatActivity {
                     if (applyBackupJson(text, scopeMask)) {
                         Toast.makeText(this, "Backup imported.",
                                 Toast.LENGTH_SHORT).show();
-                        recreate();
+                        applyThemeAndRerender();
                     } else {
                         Toast.makeText(this, "Invalid backup JSON.",
                                 Toast.LENGTH_LONG).show();
@@ -868,6 +895,14 @@ public class SettingsActivity extends AppCompatActivity {
         preferencesContainer.addView(buildToggle("Gboard-Style Bottom Row",
                 "Use comma & period keys around space, like Gboard. Hides the settings icon and arrow cluster — cursor control moves into a dedicated panel.",
                 "gboard_style_row", false, textCol, bg, accent));
+
+        // Online suggestion source: when enabled, the suggestion engine
+        // queries Google's public suggest endpoint to enrich the local
+        // dictionary. Default off so the IME stays offline-by-default
+        // (Sketchware-Pro friendly) and never phones home without consent.
+        preferencesContainer.addView(buildToggle("Online Suggestions",
+                "Fetch additional suggestions from the internet (Google suggest). Requires network. Off keeps the keyboard fully offline.",
+                "online_suggestions", false, textCol, bg, accent));
 
         preferencesContainer.addView(buildKeyboardHeightSelector(textCol, bg, accent));
         preferencesContainer.addView(buildKeySoundVolumeSelector(textCol, bg, accent));
@@ -1288,7 +1323,10 @@ public class SettingsActivity extends AppCompatActivity {
                 Toast.makeText(this,
                         name + " applied — restart keyboard to see changes",
                         Toast.LENGTH_SHORT).show();
-                recreate();
+                // Re-render in place rather than recreate() so the user keeps
+                // their scroll position + EditText focus instead of being
+                // bounced back to the top with the keyboard popping up.
+                applyThemeAndRerender();
             });
 
             themesContainer.addView(row);
@@ -2079,6 +2117,11 @@ public class SettingsActivity extends AppCompatActivity {
                         return;
                     }
                     prefs.edit().putInt(prefKey, parsed).apply();
+                    // Repaint the static chrome (title bar, preview card,
+                    // backup/import buttons) too so the new colour flows
+                    // through the whole settings screen, not just the
+                    // theme grid + custom panel.
+                    applyTheme();
                     renderThemes();
                 })
                 .setNegativeButton("Cancel", null)
@@ -2153,7 +2196,10 @@ public class SettingsActivity extends AppCompatActivity {
             btn.setOnClickListener(v -> {
                 prefs.edit().putString("lang", lang).apply();
                 Toast.makeText(this, "Default: " + lang, Toast.LENGTH_SHORT).show();
-                recreate();
+                // Language change only affects which snippet preset the IME
+                // uses — no theme rebuild needed. Just re-render the row so
+                // the highlighted button reflects the new selection.
+                renderLanguages();
             });
             langButtonsRow.addView(btn);
         }
