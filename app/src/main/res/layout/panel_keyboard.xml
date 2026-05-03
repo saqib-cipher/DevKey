@@ -92,14 +92,15 @@
         android:paddingStart="4dp"
         android:paddingEnd="4dp" />
 
-    <!-- ASDFG row -->
+    <!-- ASDFG row — narrower side padding to match Gboard's 5%-ish inset
+         (was 24dp which left a visibly larger gap than Gboard's). -->
     <LinearLayout
         android:id="@+id/row_letters2"
         android:layout_width="match_parent"
         android:layout_height="@dimen/row_letter_height"
         android:orientation="horizontal"
-        android:paddingStart="24dp"
-        android:paddingEnd="24dp" />
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp" />
 
     <!-- Bottom letter row + caps + backspace.
          Both the shift and backspace keys use Tabler vector drawables so
