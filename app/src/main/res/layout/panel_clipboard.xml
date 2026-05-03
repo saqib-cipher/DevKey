@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    panel_clipboard.xml — clipboard history panel.
+    Header bar + vertically-scrolling list of clipboard cards (runtime-filled).
+
+    NOTE: No Material theme dependencies — IME applies colors programmatically.
+    Backgrounds are transparent so the user's chosen keyboard theme bg shows
+    through; per-card chrome is drawn in code so it can pick up the accent.
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Header strip -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/clipboard_header_height"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@android:color/transparent"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Clipboard"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:textColor="#E8E8FF" />
+    </LinearLayout>
+
+    <!-- Card list (runtime-filled) -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/clipboard_list_height"
+        android:scrollbars="none"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:id="@+id/clip_list"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp" />
+    </ScrollView>
+</LinearLayout>

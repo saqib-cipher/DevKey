@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    res/xml/method.xml
+    ──────────────────────────────────────────────────────────────────────────
+    Declares the input method metadata.
+    Place in: app/src/main/res/xml/method.xml
+    ──────────────────────────────────────────────────────────────────────────
+-->
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="com.codekeys.ime.SettingsActivity"
+    android:isDefault="false">
+
+    <!--
+        Subtype for general English input.
+        Add more subtypes (e.g., "Python", "JavaScript") as needed —
+        they appear in the IME switcher long-press menu.
+    -->
+    <subtype
+        android:label="English (US)"
+        android:imeSubtypeLocale="en_US"
+        android:imeSubtypeMode="keyboard" />
+
+    <subtype
+        android:label="Code — General"
+        android:imeSubtypeLocale="en_US"
+        android:imeSubtypeMode="keyboard"
+        android:imeSubtypeExtraValue="lang=GENERAL" />
+
+    <subtype
+        android:label="Code — Python"
+        android:imeSubtypeLocale="en_US"
+        android:imeSubtypeMode="keyboard"
+        android:imeSubtypeExtraValue="lang=PYTHON" />
+
+    <subtype
+        android:label="Code — JavaScript"
+        android:imeSubtypeLocale="en_US"
+        android:imeSubtypeMode="keyboard"
+        android:imeSubtypeExtraValue="lang=JS" />
+
+    <subtype
+        android:label="Code — Java"
+        android:imeSubtypeLocale="en_US"
+        android:imeSubtypeMode="keyboard"
+        android:imeSubtypeExtraValue="lang=JAVA" />
+
+    <subtype
+        android:label="Code — C"
+        android:imeSubtypeLocale="en_US"
+        android:imeSubtypeMode="keyboard"
+        android:imeSubtypeExtraValue="lang=C" />
+
+</input-method>

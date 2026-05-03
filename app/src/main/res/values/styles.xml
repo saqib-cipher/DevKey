@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    styles.xml
+    ──────────────────────────────────────────────────────────────────────────
+    Common styles. Parent themes intentionally use AppCompat (not Material)
+    so the IME's inflated layouts NEVER fail to resolve theme attributes
+    under the system's Theme.DeviceDefault.InputMethod context.
+
+    The Settings activity gets a polished look from `AppTheme`, while every
+    runtime widget colour in the IME comes from getKeyBgColor / getAccentColor.
+    ──────────────────────────────────────────────────────────────────────────
+-->
+<resources>
+
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+    </style>
+
+    <style name="SettingsHeader">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">10sp</item>
+        <item name="android:textColor">#9494B5</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.15</item>
+        <item name="android:layout_marginTop">22dp</item>
+        <item name="android:layout_marginBottom">6dp</item>
+        <item name="android:layout_marginStart">4dp</item>
+    </style>
+
+</resources>

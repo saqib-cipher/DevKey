@@ -1,0 +1,26 @@
+// Top-level build file — common configuration for all sub-projects.
+// Android Studio's Gradle sync needs this file to discover the Android plugin
+// and the project's plugin/dependency repositories. Without it, the IDE
+// reports "Gradle sync failed" and the layout editor stays unavailable.
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // AGP 8.x requires JDK 17. Pinned to a stable line so layout editor
+        // and the standard Android Studio toolchain stay in sync.
+        classpath 'com.android.tools.build:gradle:8.1.4'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.buildDir
+}

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    AndroidManifest.xml
+    ──────────────────────────────────────────────────────────────────────────
+    IMPORTANT for Sketchware Pro:
+    In Sketchware Pro, paste the <service> and <activity> blocks inside the
+    <application> tag of your project's manifest, or use the
+    "Add Source Directly" feature to inject this full manifest.
+    ──────────────────────────────────────────────────────────────────────────
+-->
+<!--
+    Note: the legacy package="…" attribute was removed for AGP 8+. The
+    namespace and applicationId now live in app/build.gradle, and Gradle
+    sync fails (with the layout editor stuck on "unavailable until next
+    sync") if both are present.
+-->
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- INTERNET is opt-in: only consumed when the user enables the
+         "online suggestions" toggle in Settings. The IME never phones home
+         on its own. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@drawable/ic_launcher"
+        android:label="CodeKeys"
+        android:theme="@style/AppTheme">
+
+        <!-- ─── Launcher Activity (Settings) ─── -->
+        <activity
+            android:name=".SettingsActivity"
+            android:label="CodeKeys — Coding Keyboard"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- ─── IME Service ─── -->
+        <!--
+            This is the core component. The android:permission ensures only
+            the system can bind to it. The meta-data points to the IME config.
+        -->
+        <service
+            android:name=".CodeKeysIME"
+            android:label="CodeKeys"
+            android:permission="android.permission.BIND_INPUT_METHOD"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
+        </service>
+
+    </application>
+</manifest>

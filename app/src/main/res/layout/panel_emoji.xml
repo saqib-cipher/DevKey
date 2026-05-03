@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    panel_emoji.xml — emoji panel.
+    Gboard-style layout:
+      • Top: scrollable category tabs.
+      • Middle: 8-column emoji grid.
+      • Bottom: pill-shaped search bar (icon + live query) with a clear/back
+        key on the bottom-right that occupies the same slot as the keyboard's
+        backspace key, so the layout footprint matches the keyboard panel.
+
+    Typing into the search query is driven by the IME's input engine
+    (letters tapped on the keyboard append to the query). The emoji_search_clear
+    key on this panel is the ONLY control that removes characters from the
+    search query — the main keyboard backspace always deletes from the host
+    EditText, even while the emoji panel is visible.
+
+    NOTE: No Material theme dependencies — IME applies colors programmatically.
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Category tabs (horizontal, scrollable) -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/emoji_tab_height"
+        android:scrollbars="none"
+        android:background="@android:color/transparent">
+
+        <LinearLayout
+            android:id="@+id/emoji_category_tabs"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:gravity="center_vertical" />
+    </HorizontalScrollView>
+
+    <!-- 8-column emoji grid (rows of 8, runtime-filled) -->
+    <ScrollView
+        android:id="@+id/emoji_grid_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/emoji_grid_height"
+        android:scrollbars="none"
+        android:fillViewport="true"
+        android:background="@android:color/transparent">
+
+        <LinearLayout
+            android:id="@+id/emoji_grid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp" />
+    </ScrollView>
+
+    <!-- Bottom search bar — pill container on the left, dedicated clear key
+         on the right. The clear key is the only widget that removes text
+         from the search query. The main-keyboard backspace, when visible,
+         continues to delete from the host EditText. -->
+    <LinearLayout
+        android:id="@+id/emoji_search_bar"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/emoji_search_height"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@android:color/transparent"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp">
+
+        <!-- Pill-shaped search container (runtime-styled background) -->
+        <LinearLayout
+            android:id="@+id/emoji_search_pill"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/key_margin"
+            android:layout_marginEnd="@dimen/key_margin"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="6dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="14dp"
+            android:paddingEnd="10dp">
+
+            <ImageView
+                android:id="@+id/emoji_search_icon"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/search"
+                android:layout_marginEnd="10dp"
+                android:contentDescription="Search" />
+
+            <TextView
+                android:id="@+id/emoji_search_text"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="15sp"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:textColor="#9DA0BF"
+                android:text="Search" />
+        </LinearLayout>
+
+        <!-- Clear key — dedicated to removing characters from the search
+             query (one-char pop) or wiping it. Visuals applied programmatically. -->
+        <ImageButton
+            android:id="@+id/emoji_search_clear"
+            android:layout_width="@dimen/key_backspace_width"
+            android:layout_height="match_parent"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="6dp"
+            android:layout_marginStart="@dimen/key_margin"
+            android:layout_marginEnd="@dimen/key_margin"
+            android:src="@drawable/x"
+            android:scaleType="fitCenter"
+            android:padding="11dp"
+            android:background="#252545"
+            android:contentDescription="Clear search" />
+    </LinearLayout>
+</LinearLayout>

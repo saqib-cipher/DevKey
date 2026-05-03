@@ -1,0 +1,64 @@
+// app/build.gradle
+// ─────────────────────────────────────────────────────────────────────────────
+// Android Studio / AGP 8 module config. The `namespace` field replaces the
+// old <manifest package="…"> attribute and is REQUIRED for AGP 8+ — without
+// it Gradle sync fails with "Namespace not specified", which in turn keeps
+// the layout editor unavailable.
+//
+// The custom `sourceSets` mapping points main/ at our existing src/main/
+// layout (no surprise paths), so renaming or moving source folders will not
+// silently change the build inputs.
+// ─────────────────────────────────────────────────────────────────────────────
+
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.codekeys.ime'
+    compileSdk 34
+    buildToolsVersion "34.0.0"
+
+    defaultConfig {
+        applicationId "com.codekeys.ime"
+        minSdk 21          // Android 5.0+ support
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            debuggable true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // The IDE's layout editor needs the standard src/main/{java,res,assets}
+    // tree; this block makes the assumption explicit so a future move can't
+    // silently break sync.
+    sourceSets {
+        main {
+            manifest.srcFile 'src/main/AndroidManifest.xml'
+            java.srcDirs    = ['src/main/java']
+            res.srcDirs     = ['src/main/res']
+            assets.srcDirs  = ['src/main/assets']
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    // No Material Components — the IME inflates under
+    // Theme.DeviceDefault.InputMethod, which doesn't expose Material attrs,
+    // so all keyboard visuals are produced programmatically (see UIRenderer).
+    // No RecyclerView, no Fragments — Sketchware-compatible.
+}

@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    panel_cursor.xml — full-panel cursor controller.
+
+    Shown when the user taps the single "cursor" button in Gboard-style
+    mode. Replaces the keyboard panel (FrameLayout @id/panel_container)
+    with a generous D-pad so cursor work doesn't squeeze into a 26dp
+    touch target. Each direction repeats while held (the IME attaches a
+    long-press handler in code, mirroring the backspace pattern).
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="6dp">
+
+    <!-- ── Left column: selection / clipboard helpers ── -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginEnd="4dp">
+
+        <ImageButton
+            android:id="@+id/cursor_btn_select_toggle"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:src="@drawable/text_select"
+            android:scaleType="fitCenter"
+            android:padding="12dp"
+            android:background="#252545"
+            android:contentDescription="Toggle selection mode" />
+
+        <ImageButton
+            android:id="@+id/cursor_btn_select_all"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:src="@drawable/select_all"
+            android:scaleType="fitCenter"
+            android:padding="12dp"
+            android:background="#252545"
+            android:contentDescription="Select all" />
+
+        <ImageButton
+            android:id="@+id/cursor_btn_copy"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:src="@drawable/copy"
+            android:scaleType="fitCenter"
+            android:padding="12dp"
+            android:background="#252545"
+            android:contentDescription="Copy" />
+
+        <ImageButton
+            android:id="@+id/cursor_btn_paste"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:src="@drawable/clipboard_paste"
+            android:scaleType="fitCenter"
+            android:padding="12dp"
+            android:background="#252545"
+            android:contentDescription="Paste" />
+    </LinearLayout>
+
+    <!-- ── Center column: D-pad ── -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1.4"
+        android:orientation="vertical"
+        android:layout_marginStart="2dp"
+        android:layout_marginEnd="2dp">
+
+        <ImageButton
+            android:id="@+id/cursor_btn_up"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginBottom="3dp"
+            android:layout_weight="1"
+            android:background="#252545"
+            android:contentDescription="Up"
+            android:padding="12dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/arrow_badge_up" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="2"
+            android:layout_marginBottom="3dp"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/cursor_btn_left"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_marginEnd="3dp"
+                android:layout_weight="1"
+                android:background="#252545"
+                android:contentDescription="Left"
+                android:padding="12dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/arrow_badge_left" />
+
+            <ImageButton
+                android:id="@+id/cursor_btn_right"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:src="@drawable/arrow_badge_right"
+                android:scaleType="fitCenter"
+                android:padding="12dp"
+                android:background="#252545"
+                android:contentDescription="Right" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/cursor_btn_down"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="#252545"
+            android:contentDescription="Down"
+            android:padding="12dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/arrow_badge_down" />
+    </LinearLayout>
+
+    <!-- ── Right column: jump targets + backspace ── -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginStart="4dp">
+
+        <ImageButton
+            android:id="@+id/cursor_btn_text_start"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:src="@drawable/chevrons_up"
+            android:scaleType="fitCenter"
+            android:padding="12dp"
+            android:background="#252545"
+            android:contentDescription="Move cursor to first character" />
+
+        <ImageButton
+            android:id="@+id/cursor_btn_home"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:src="@drawable/line_start"
+            android:scaleType="fitCenter"
+            android:padding="12dp"
+            android:background="#252545"
+            android:contentDescription="Line start" />
+
+        <ImageButton
+            android:id="@+id/cursor_btn_end"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:src="@drawable/line_end"
+            android:scaleType="fitCenter"
+            android:padding="12dp"
+            android:background="#252545"
+            android:contentDescription="Line end" />
+
+        <ImageButton
+            android:id="@+id/cursor_btn_text_end"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="3dp"
+            android:src="@drawable/chevrons_down"
+            android:scaleType="fitCenter"
+            android:padding="12dp"
+            android:background="#252545"
+            android:contentDescription="Move cursor to last position" />
+
+        <ImageButton
+            android:id="@+id/cursor_btn_backspace"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:src="@drawable/backspace"
+            android:scaleType="fitCenter"
+            android:padding="10dp"
+            android:background="#252545"
+            android:contentDescription="Backspace" />
+    </LinearLayout>
+</LinearLayout>
