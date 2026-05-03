@@ -17,11 +17,11 @@
     <dimen name="keyboard_elevation">3dp</dimen>
 
     <!-- Row heights (baseline — scaled at runtime) -->
-    <dimen name="row_suggestion_height">48dp</dimen>
-    <dimen name="row_pc_keys_height">40dp</dimen>
+    <dimen name="row_suggestion_height">42dp</dimen>
+    <dimen name="row_pc_keys_height">38dp</dimen>
     <dimen name="row_symbol_height">44dp</dimen>
     <dimen name="row_snippet_height">40dp</dimen>
-    <dimen name="row_number_height">48dp</dimen>
+    <dimen name="row_number_height">42dp</dimen>
     <dimen name="row_letter_height">56dp</dimen>
     <dimen name="row_nav_height">56dp</dimen>
 
@@ -33,13 +33,13 @@
     <dimen name="key_letter_text_size">22sp</dimen>
 
     <!-- Special keys (caps / backspace / nav row) -->
-    <dimen name="key_special_width">52dp</dimen>
-    <dimen name="key_backspace_width">64dp</dimen>
+    <dimen name="key_special_width">46dp</dimen>
+    <dimen name="key_backspace_width">56dp</dimen>
     <!-- Bottom action row keys: trimmed so the space bar can claim more width. -->
-    <dimen name="key_action_width">42dp</dimen>
-    <dimen name="key_undo_width">32dp</dimen>
-    <dimen name="key_arrow_width">28dp</dimen>
-    <dimen name="key_enter_width">56dp</dimen>
+    <dimen name="key_action_width">36dp</dimen>
+    <dimen name="key_undo_width">30dp</dimen>
+    <dimen name="key_arrow_width">26dp</dimen>
+    <dimen name="key_enter_width">46dp</dimen>
 
     <!-- Chips -->
     <dimen name="chip_corner_radius">18dp</dimen>
