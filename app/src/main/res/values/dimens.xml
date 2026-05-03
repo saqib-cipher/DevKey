@@ -7,43 +7,54 @@
     Anything that's used across multiple layouts lives here so the look stays
     consistent. The Java side scales rows by `key_height_scale` at runtime,
     so values here are the *baseline* heights at scale = 1.0.
+
+    Sizes were tuned to match Gboard's default phone layout: lower row
+    heights, tighter horizontal margins, slightly larger enter / backspace
+    so the bottom row doesn't feel cramped, and chip / suggestion heights
+    that follow Gboard's suggestion strip.
     ──────────────────────────────────────────────────────────────────────────
 -->
 <resources>
 
     <!-- Keyboard root padding — keep small so the keyboard isn't bottom-heavy. -->
-    <dimen name="keyboard_root_padding_top">4dp</dimen>
-    <dimen name="keyboard_root_padding_bottom">6dp</dimen>
+    <dimen name="keyboard_root_padding_top">3dp</dimen>
+    <dimen name="keyboard_root_padding_bottom">5dp</dimen>
     <dimen name="keyboard_elevation">3dp</dimen>
 
-    <!-- Row heights (baseline — scaled at runtime) -->
-    <dimen name="row_suggestion_height">42dp</dimen>
-    <dimen name="row_pc_keys_height">38dp</dimen>
-    <dimen name="row_symbol_height">44dp</dimen>
-    <dimen name="row_snippet_height">40dp</dimen>
-    <dimen name="row_number_height">42dp</dimen>
-    <dimen name="row_letter_height">56dp</dimen>
-    <dimen name="row_nav_height">56dp</dimen>
+    <!-- Row heights (baseline — scaled at runtime). Tuned to Gboard's
+         default phone layout: shorter letter rows so the keyboard
+         occupies less of the screen when the user opts in to "Match
+         Gboard" sizing via the height-scale slider. -->
+    <dimen name="row_suggestion_height">40dp</dimen>
+    <dimen name="row_pc_keys_height">36dp</dimen>
+    <dimen name="row_symbol_height">40dp</dimen>
+    <dimen name="row_snippet_height">36dp</dimen>
+    <dimen name="row_number_height">38dp</dimen>
+    <dimen name="row_letter_height">52dp</dimen>
+    <dimen name="row_nav_height">52dp</dimen>
 
-    <!-- Key sizing & spacing -->
+    <!-- Key sizing & spacing — tighter margins so adjacent keys read as a
+         continuous strip the way Gboard does, with rounded corners. -->
     <dimen name="key_corner_radius">8dp</dimen>
-    <dimen name="key_padding_h">6dp</dimen>
-    <dimen name="key_padding_v">4dp</dimen>
-    <dimen name="key_margin">4dp</dimen>
-    <dimen name="key_letter_text_size">22sp</dimen>
+    <dimen name="key_padding_h">4dp</dimen>
+    <dimen name="key_padding_v">3dp</dimen>
+    <dimen name="key_margin">3dp</dimen>
+    <dimen name="key_letter_text_size">20sp</dimen>
 
-    <!-- Special keys (caps / backspace / nav row) -->
-    <dimen name="key_special_width">46dp</dimen>
-    <dimen name="key_backspace_width">56dp</dimen>
+    <!-- Special keys (caps / backspace / nav row).
+         Backspace / shift are 1.4× a normal key so they line up under the
+         bottom row of the QWERTY block — same proportion Gboard uses. -->
+    <dimen name="key_special_width">44dp</dimen>
+    <dimen name="key_backspace_width">50dp</dimen>
     <!-- Bottom action row keys: trimmed so the space bar can claim more width. -->
     <dimen name="key_action_width">36dp</dimen>
     <dimen name="key_undo_width">30dp</dimen>
     <dimen name="key_arrow_width">26dp</dimen>
-    <dimen name="key_enter_width">46dp</dimen>
+    <dimen name="key_enter_width">52dp</dimen>
 
-    <!-- Chips -->
+    <!-- Chips — slightly taller so they read as proper Gboard-style pills. -->
     <dimen name="chip_corner_radius">18dp</dimen>
-    <dimen name="chip_height">32dp</dimen>
+    <dimen name="chip_height">34dp</dimen>
 
     <!-- Card surfaces (clipboard) -->
     <dimen name="card_corner_radius">16dp</dimen>
@@ -51,11 +62,11 @@
     <dimen name="card_margin">4dp</dimen>
 
     <!-- Emoji panel -->
-    <dimen name="emoji_search_height">48dp</dimen>
-    <dimen name="emoji_tab_height">42dp</dimen>
-    <dimen name="emoji_tab_width">54dp</dimen>
+    <dimen name="emoji_search_height">46dp</dimen>
+    <dimen name="emoji_tab_height">40dp</dimen>
+    <dimen name="emoji_tab_width">52dp</dimen>
     <dimen name="emoji_grid_height">220dp</dimen>
-    <dimen name="emoji_cell_height">44dp</dimen>
+    <dimen name="emoji_cell_height">42dp</dimen>
 
     <!-- Clipboard panel -->
     <dimen name="clipboard_header_height">42dp</dimen>

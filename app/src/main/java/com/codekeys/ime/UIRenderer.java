@@ -1,7 +1,9 @@
 package com.codekeys.ime;
 
 import android.content.Context;
+import android.graphics.PorterDuff;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.view.GestureDetector;
 import android.view.Gravity;
@@ -111,6 +113,27 @@ final class UIRenderer {
         btn.setLayoutParams(lp);
         btn.setMinHeight(0);
         btn.setMinWidth(0);
+        return btn;
+    }
+
+    /**
+     * Same as {@link #makeChip(String, int, int, boolean)} but with a leading
+     * vector icon (used by clipboard suggestion chips so the user sees a
+     * proper paste glyph instead of a 📋 emoji that doesn't track theming).
+     * The icon is tinted to match {@code textColor} so it reads as part of
+     * the chip rather than an inline image.
+     */
+    Button makeChipWithIcon(String label, int bgColor, int textColor, boolean primary, int iconResId) {
+        Button btn = makeChip(label, bgColor, textColor, primary);
+        Drawable icon = ime.getResources().getDrawable(iconResId, ime.getTheme()).mutate();
+        int iconSize = ime.dp(16);
+        icon.setBounds(0, 0, iconSize, iconSize);
+        icon.setColorFilter(textColor, PorterDuff.Mode.SRC_IN);
+        btn.setCompoundDrawables(icon, null, null, null);
+        btn.setCompoundDrawablePadding(ime.dp(6));
+        // Trim the leading inset a touch — the compound drawable already adds
+        // visual breathing room so the original 12dp padding feels too wide.
+        btn.setPadding(ime.dp(10), 0, ime.dp(12), 0);
         return btn;
     }
 
