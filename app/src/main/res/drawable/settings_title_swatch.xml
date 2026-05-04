@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Rounded accent strip used as the page title swatch. Java side may
+    re-tint this drawable to match the current accent colour at runtime
+    (mutate() before setColor / setTint).
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#00E5FF" />
+    <corners android:radius="3dp" />
+</shape>

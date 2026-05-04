@@ -11,6 +11,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.inputmethodservice.InputMethodService;
+import android.inputmethodservice.InputMethodService.Insets;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.Handler;
@@ -136,6 +137,16 @@ public class CodeKeysIME extends InputMethodService {
 
     // Views — top-level
     private View keyboardView;
+    /** Inner panel that holds all the actual keys; in floating mode this is
+     *  the view we translate / resize while the outer FrameLayout fills the
+     *  IME window. */
+    private LinearLayout keyboardInner;
+    /** Thin grab-bar at the top of the inner panel; drag to reposition the
+     *  whole keyboard in floating mode. */
+    private FrameLayout floatingDragHandle;
+    /** Bottom-right corner pinch handle in floating mode — drag to resize
+     *  the keyboard width. */
+    private ImageView floatingResizeHandle;
     private LinearLayout rowSuggestions;
     private HorizontalScrollView suggestionScroll;
     private FrameLayout panelContainer;
@@ -523,11 +534,15 @@ public class CodeKeysIME extends InputMethodService {
     @Override
     public View onCreateInputView() {
         keyboardView = LayoutInflater.from(this).inflate(R.layout.keyboard_main, null);
+        keyboardInner    = keyboardView.findViewById(R.id.keyboard_inner);
+        floatingDragHandle   = keyboardView.findViewById(R.id.floating_drag_handle);
+        floatingResizeHandle = keyboardView.findViewById(R.id.floating_resize_handle);
         panelContainer   = keyboardView.findViewById(R.id.panel_container);
         rowPcKeys        = keyboardView.findViewById(R.id.row_pc_keys);
         pcKeysScroll     = keyboardView.findViewById(R.id.pc_keys_scroll);
 
         bindBottomActionRow();
+        bindFloatingHandles();
         buildPcKeysRow();
 
         // Reset cached panel views so new theme/scale settings are applied to
@@ -537,7 +552,10 @@ public class CodeKeysIME extends InputMethodService {
         clipboardPanelView = null;
 
         applyTheme();
-        applyFloatingMode();
+        // Defer floating-mode application until the IME window has placed
+        // the view — getLayoutParams() returns null until then, which would
+        // make us silently skip the root-height adjustment.
+        keyboardView.post(this::applyFloatingMode);
         switchPanel(PanelMode.KEYBOARD);
         return keyboardView;
     }
@@ -1053,41 +1071,80 @@ public class CodeKeysIME extends InputMethodService {
         final String label = caps ? letter.toUpperCase() : letter;
 
         Button btn = ui.makeKey(label, getKeyBgColor(), getKeyTextColor());
-        final float[] initialTouchX = {0};
-        final float[] initialTouchY = {0};
+        // Closure state for this key's touch lifecycle. Commit fires on DOWN
+        // (Gboard-style) so fast-typing never loses keystrokes to ACTION_CANCEL
+        // or finger drift.
+        final Runnable[] longPressRun = {null};
+        final float[] downXY = {0f, 0f};
+        final int touchSlop = android.view.ViewConfiguration.get(this).getScaledTouchSlop();
 
         btn.setOnTouchListener((v, ev) -> {
-            int action = ev.getAction();
+            int action = ev.getActionMasked();
             if (action == MotionEvent.ACTION_DOWN) {
                 showKeyPreview(v, label);
-                initialTouchX[0] = ev.getX();
-                initialTouchY[0] = ev.getY();
-                return true; // we must consume DOWN to get subsequent actions
-            } else if (action == MotionEvent.ACTION_UP) {
-                dismissPreview();
-                float dx = Math.abs(ev.getX() - initialTouchX[0]);
-                float dy = Math.abs(ev.getY() - initialTouchY[0]);
-                // If it was a relatively stationary tap, fire the commit logic
-                if (dx < dp(20) && dy < dp(20)) {
-                    haptic(v);
-                    String ch = (isLetter && capsState != CAPS_OFF) ? letter.toUpperCase() : letter;
-                    commitChar(ch);
-                    noteOperation();
-                    if (isLetter && capsState == CAPS_SINGLE) {
-                        capsState = CAPS_OFF;
+                haptic(v);
+                downXY[0] = ev.getX();
+                downXY[1] = ev.getY();
+                // Commit on DOWN — Gboard-style. This avoids losing
+                // keystrokes when (a) the user's finger drifts off the key
+                // before lifting, (b) ACTION_UP arrives as ACTION_CANCEL
+                // because a parent ViewGroup intercepted the touch, or
+                // (c) the next key's DOWN cancels this key's UP during
+                // fast multi-touch typing.
+                final String committed = (isLetter && capsState != CAPS_OFF) ? letter.toUpperCase() : letter;
+                commitChar(committed);
+                noteOperation();
+                if (isLetter && capsState == CAPS_SINGLE) {
+                    capsState = CAPS_OFF;
+                    // Defer rebuild to next frame so we don't mutate the
+                    // view tree while still dispatching this touch.
+                    v.post(() -> {
                         buildQwertyRows();
                         refreshCapsButtonStyle();
+                    });
+                }
+                // Schedule long-press alt commit (caps swap): backspace the
+                // just-committed char and replace with the swapped-case variant.
+                longPressRun[0] = () -> {
+                    String alt = isLetter
+                            ? (committed.equals(letter.toUpperCase())
+                                    ? letter.toLowerCase()
+                                    : letter.toUpperCase())
+                            : letter;
+                    if (!committed.equals(alt)) {
+                        InputConnection ic = getCurrentInputConnection();
+                        if (ic != null) ic.deleteSurroundingText(committed.length(), 0);
+                        commitChar(alt);
+                        haptic(v);
                     }
+                };
+                uiHandler.postDelayed(longPressRun[0],
+                        android.view.ViewConfiguration.getLongPressTimeout());
+                return true;
+            } else if (action == MotionEvent.ACTION_MOVE) {
+                // If finger drifts beyond touch slop, cancel pending long-press.
+                if (longPressRun[0] != null
+                        && (Math.abs(ev.getX() - downXY[0]) > touchSlop
+                            || Math.abs(ev.getY() - downXY[1]) > touchSlop)) {
+                    uiHandler.removeCallbacks(longPressRun[0]);
+                    longPressRun[0] = null;
                 }
                 return true;
-            } else if (action == MotionEvent.ACTION_CANCEL) {
+            } else if (action == MotionEvent.ACTION_UP
+                    || action == MotionEvent.ACTION_CANCEL) {
                 dismissPreview();
+                if (longPressRun[0] != null) {
+                    uiHandler.removeCallbacks(longPressRun[0]);
+                    longPressRun[0] = null;
+                }
                 return true;
             }
             return false;
         });
+        // Keep the framework long-click as a no-op since we handle long-press
+        // ourselves via the touch listener — the touch listener's `return true`
+        // would otherwise prevent the framework long-click from firing.
         btn.setOnLongClickListener(v -> {
-            haptic(v);
             String ch = isLetter
                 ? (caps ? letter.toLowerCase() : letter.toUpperCase())
                 : letter;
@@ -2941,37 +2998,271 @@ public class CodeKeysIME extends InputMethodService {
         v.setLayoutParams(lp);
     }
 
+    // ─── Floating keyboard ────────────────────────────────────────────────────
+    // Width preset cycle for the resize handle (tap to step through). The
+    // floating panel is centred on its own translation, so the user can drag
+    // it anywhere on screen via the top grab-bar.
+    private static final int[] FLOATING_WIDTH_PRESETS_DP = {280, 340, 400};
+    /** Tracks the active touch's pointer id for the drag-handle. We use only
+     *  this pointer's coordinates so a second finger landing on a key while
+     *  dragging doesn't yank the panel. */
+    private int floatingDragPointerId = -1;
+    private float floatingDragDownRawX, floatingDragDownRawY;
+    private float floatingDragStartTx, floatingDragStartTy;
+    private int floatingResizePointerId = -1;
+    private float floatingResizeDownRawX;
+    private int floatingResizeStartWidth;
+
     /**
-     * Toggles "floating" mode — when enabled the keyboard root gets symmetric
-     * side padding so the keys read as a centred pill instead of spanning the
-     * full screen width. This is a one-thumb-friendly variant; we don't
-     * reposition the IME (system IMEs always anchor to the bottom), just
-     * narrow the visual surface.
+     * Wires touch handling for the floating drag/resize handles. Called once
+     * from onCreateInputView after the layout is inflated.
      *
-     * The padding scales with screen width so on tablets the inset is more
-     * generous than on phones. Capped at 56dp/side so very small screens
-     * don't shrink the keys to unusable widths.
+     * Drag: ACTION_DOWN captures the inner panel's current translationX/Y;
+     * MOVE updates them by the raw delta; UP/CANCEL persists the final
+     * position to prefs. We use raw coordinates so the panel keeps up with
+     * the finger even when the IME window itself doesn't fill the screen.
+     *
+     * Resize: tap cycles three width presets. Long-press snaps back to
+     * defaults (centred + medium width).
+     */
+    private void bindFloatingHandles() {
+        if (floatingDragHandle == null || floatingResizeHandle == null) return;
+
+        floatingDragHandle.setOnTouchListener((v, ev) -> {
+            if (keyboardInner == null) return false;
+            int action = ev.getActionMasked();
+            switch (action) {
+                case MotionEvent.ACTION_DOWN:
+                    floatingDragPointerId   = ev.getPointerId(0);
+                    floatingDragDownRawX    = ev.getRawX();
+                    floatingDragDownRawY    = ev.getRawY();
+                    floatingDragStartTx     = keyboardInner.getTranslationX();
+                    floatingDragStartTy     = keyboardInner.getTranslationY();
+                    haptic(v);
+                    return true;
+                case MotionEvent.ACTION_MOVE: {
+                    int idx = ev.findPointerIndex(floatingDragPointerId);
+                    if (idx < 0) return true;
+                    float dx = ev.getRawX() - floatingDragDownRawX;
+                    float dy = ev.getRawY() - floatingDragDownRawY;
+                    float newTx = floatingDragStartTx + dx;
+                    float newTy = floatingDragStartTy + dy;
+                    // Clamp Y so the panel can't be dragged off-screen
+                    // upwards beyond the IME window's available area.
+                    newTy = Math.min(0f, newTy); // 0 == bottom-anchored docked position
+                    keyboardInner.setTranslationX(newTx);
+                    keyboardInner.setTranslationY(newTy);
+                    syncResizeHandlePosition();
+                    return true;
+                }
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    floatingDragPointerId = -1;
+                    persistFloatingPosition();
+                    return true;
+            }
+            return false;
+        });
+
+        floatingResizeHandle.setOnTouchListener((v, ev) -> {
+            if (keyboardInner == null) return false;
+            int action = ev.getActionMasked();
+            switch (action) {
+                case MotionEvent.ACTION_DOWN:
+                    floatingResizePointerId = ev.getPointerId(0);
+                    floatingResizeDownRawX  = ev.getRawX();
+                    floatingResizeStartWidth = keyboardInner.getWidth() > 0
+                            ? keyboardInner.getWidth()
+                            : dp(prefs.getInt("floating_width_dp", FLOATING_WIDTH_PRESETS_DP[1]));
+                    haptic(v);
+                    return true;
+                case MotionEvent.ACTION_MOVE: {
+                    int idx = ev.findPointerIndex(floatingResizePointerId);
+                    if (idx < 0) return true;
+                    float dx = ev.getRawX() - floatingResizeDownRawX;
+                    int minPx = dp(220);
+                    int maxPx = Math.min(getResources().getDisplayMetrics().widthPixels,
+                            dp(640));
+                    // Resize is bidirectional from the right edge of the inner
+                    // panel: dragging right grows it, dragging left shrinks
+                    // (factor of 2 because the panel is centred — the
+                    // right-edge moves twice as far as the cursor).
+                    int newWidth = (int) Math.max(minPx, Math.min(maxPx, floatingResizeStartWidth + dx * 2));
+                    ViewGroup.LayoutParams lp = keyboardInner.getLayoutParams();
+                    if (lp != null) {
+                        lp.width = newWidth;
+                        keyboardInner.setLayoutParams(lp);
+                    }
+                    keyboardInner.post(this::syncResizeHandlePosition);
+                    return true;
+                }
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    floatingResizePointerId = -1;
+                    persistFloatingWidth();
+                    return true;
+            }
+            return false;
+        });
+
+        // Long-press the resize handle to reset position + width.
+        floatingResizeHandle.setOnLongClickListener(v -> {
+            haptic(v);
+            prefs.edit()
+                    .remove("floating_x")
+                    .remove("floating_y")
+                    .remove("floating_width_dp")
+                    .apply();
+            applyFloatingMode();
+            return true;
+        });
+    }
+
+    /**
+     * Aligns the resize handle to the bottom-right corner of the inner
+     * panel. The handle lives in the outer FrameLayout (so it can render
+     * above the inner panel) but visually it should track the panel.
+     */
+    private void syncResizeHandlePosition() {
+        if (keyboardInner == null || floatingResizeHandle == null) return;
+        if (floatingResizeHandle.getVisibility() != View.VISIBLE) return;
+        int rootW  = keyboardView.getWidth();
+        int innerW = keyboardInner.getWidth();
+        if (rootW <= 0 || innerW <= 0) return;
+        // Inner is centred horizontally → its right edge is rootW/2 + innerW/2 + tx.
+        // Resize handle is anchored to root's right edge, so subtract its
+        // current right offset to get the translation needed.
+        float innerRightEdge = (rootW + innerW) / 2f + keyboardInner.getTranslationX();
+        float handleRightEdge = rootW;
+        floatingResizeHandle.setTranslationX(innerRightEdge - handleRightEdge);
+        floatingResizeHandle.setTranslationY(keyboardInner.getTranslationY());
+    }
+
+    private void persistFloatingPosition() {
+        if (keyboardInner == null) return;
+        prefs.edit()
+                .putFloat("floating_x", keyboardInner.getTranslationX())
+                .putFloat("floating_y", keyboardInner.getTranslationY())
+                .apply();
+    }
+
+    private void persistFloatingWidth() {
+        if (keyboardInner == null) return;
+        int widthPx = keyboardInner.getWidth();
+        if (widthPx <= 0) return;
+        int widthDp = Math.round(widthPx / getResources().getDisplayMetrics().density);
+        prefs.edit().putInt("floating_width_dp", widthDp).apply();
+    }
+
+    /**
+     * Applies the current floating-mode preference to the keyboard view.
+     *
+     * <p>When floating is ON:
+     * <ul>
+     *   <li>The outer FrameLayout (keyboard_root) is grown to roughly full
+     *       screen height so the inner panel has room to be dragged
+     *       anywhere — without this the IME window only contains the keys'
+     *       own height and translationY is clipped.
+     *   <li>The drag bar + resize handle are made visible.
+     *   <li>The inner panel's width is set to the persisted width preset
+     *       (default 340dp) and re-centred horizontally.
+     *   <li>Persisted translationX/Y is restored.
+     * </ul>
+     *
+     * <p>When floating is OFF the root collapses back to wrap_content, the
+     * handles are hidden, and the inner panel returns to match_parent /
+     * zero translation.
      */
     private void applyFloatingMode() {
-        if (keyboardView == null) return;
+        if (keyboardView == null || keyboardInner == null) return;
         boolean floating = prefs.getBoolean("floating", false);
-        int sidePad = 0;
-        int bottomExtra = 0;
+
+        ViewGroup.LayoutParams rootLp   = keyboardView.getLayoutParams();
+        ViewGroup.LayoutParams innerLp  = keyboardInner.getLayoutParams();
+
         if (floating) {
-            int screenWidth = getResources().getDisplayMetrics().widthPixels;
-            // ~7% of screen width per side, capped between 16dp and 56dp.
-            sidePad = Math.max(dp(16), Math.min(dp(56), Math.round(screenWidth * 0.07f)));
-            bottomExtra = dp(8);
-        }
-        keyboardView.setPadding(sidePad, keyboardView.getPaddingTop(), sidePad,
-                keyboardView.getPaddingBottom() == 0 ? bottomExtra : keyboardView.getPaddingBottom());
-        // Also drop a touch of breathing room under the keyboard so the
-        // floating block reads as detached from the navigation bar.
-        if (floating) {
-            ViewGroup.LayoutParams lp = keyboardView.getLayoutParams();
-            if (lp != null) keyboardView.setLayoutParams(lp);
+            if (floatingDragHandle   != null) floatingDragHandle.setVisibility(View.VISIBLE);
+            if (floatingResizeHandle != null) floatingResizeHandle.setVisibility(View.VISIBLE);
+
+            // Grow the IME window so the panel has room to translate up.
+            int screenH = getResources().getDisplayMetrics().heightPixels;
+            int rootH   = (int) (screenH * 0.85f);
+            if (rootLp != null) {
+                rootLp.height = rootH;
+                keyboardView.setLayoutParams(rootLp);
+            }
+
+            // Width: persisted preset, capped to screen width.
+            int defaultWidthDp = FLOATING_WIDTH_PRESETS_DP[1];
+            int widthDp = prefs.getInt("floating_width_dp", defaultWidthDp);
+            int widthPx = Math.min(getResources().getDisplayMetrics().widthPixels - dp(16),
+                    dp(widthDp));
+            if (innerLp instanceof FrameLayout.LayoutParams) {
+                FrameLayout.LayoutParams flp = (FrameLayout.LayoutParams) innerLp;
+                flp.width  = widthPx;
+                flp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+                keyboardInner.setLayoutParams(flp);
+            }
+
+            // Restore persisted translation.
+            keyboardInner.setTranslationX(prefs.getFloat("floating_x", 0f));
+            keyboardInner.setTranslationY(prefs.getFloat("floating_y", 0f));
+
+            keyboardInner.setPadding(dp(4), keyboardInner.getPaddingTop(),
+                    dp(4), keyboardInner.getPaddingBottom());
+
+            // Wait for layout pass to read the inner's measured width before
+            // aligning the resize handle.
+            keyboardInner.post(this::syncResizeHandlePosition);
+        } else {
+            if (floatingDragHandle   != null) floatingDragHandle.setVisibility(View.GONE);
+            if (floatingResizeHandle != null) floatingResizeHandle.setVisibility(View.GONE);
+
+            if (rootLp != null) {
+                rootLp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+                keyboardView.setLayoutParams(rootLp);
+            }
+            if (innerLp instanceof FrameLayout.LayoutParams) {
+                FrameLayout.LayoutParams flp = (FrameLayout.LayoutParams) innerLp;
+                flp.width  = ViewGroup.LayoutParams.MATCH_PARENT;
+                flp.gravity = Gravity.BOTTOM;
+                keyboardInner.setLayoutParams(flp);
+            }
+            keyboardInner.setTranslationX(0f);
+            keyboardInner.setTranslationY(0f);
+            if (floatingResizeHandle != null) {
+                floatingResizeHandle.setTranslationX(0f);
+                floatingResizeHandle.setTranslationY(0f);
+            }
         }
         keyboardView.requestLayout();
+    }
+
+    /**
+     * In floating mode, only the inner panel should be touchable — the rest
+     * of the IME window must let touches pass through to the host app.
+     */
+    @Override
+    public void onComputeInsets(Insets outInsets) {
+        super.onComputeInsets(outInsets);
+        if (keyboardView == null || keyboardInner == null) return;
+        boolean floating = prefs != null && prefs.getBoolean("floating", false);
+        if (!floating) return;
+
+        // Region the system treats as the IME's visible content (for the
+        // host app to scroll under). Use the inner panel's actual on-screen
+        // bounds.
+        int[] loc = new int[2];
+        keyboardInner.getLocationInWindow(loc);
+        int top = loc[1];
+        int left = loc[0];
+        int right = left + keyboardInner.getWidth();
+        int bottom = top + keyboardInner.getHeight();
+
+        outInsets.contentTopInsets = top;
+        outInsets.visibleTopInsets = top;
+        outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION;
+        outInsets.touchableRegion.set(left, top, right, bottom);
     }
 
     // ─── PC keys row ─────────────────────────────────────────────────────────

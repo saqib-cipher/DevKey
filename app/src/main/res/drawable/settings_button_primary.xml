@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Primary CTA button for Settings. Accent-tinted fill so the highest-
+    priority action (Enable IME, Export, Add) reads as the most clickable
+    surface on each card.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#2D3D6E" />
+    <corners android:radius="12dp" />
+    <stroke android:width="1dp" android:color="#3300E5FF" />
+</shape>

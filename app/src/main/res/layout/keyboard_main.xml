@@ -11,12 +11,19 @@
     side overrides them at runtime via getKeyBgColor() / getAccentColor() etc.
 
     Architecture:
-      • Suggestion strip (chips) — relocated to the top of the letter/number rows.
-      • Optional PC keys row — togglable from settings.
-      • Single content container (FrameLayout) — the active panel view
-        (keyboard / emoji / clipboard / symbols) is swapped inside this
-        container instead of rebuilding the whole keyboard each time.
-      • Bottom action row — caps/space/enter/arrows/etc., always visible.
+      • Outer FrameLayout (`keyboard_root`) — when "floating" is OFF this is
+        sized to wrap_content like a normal docked IME. When floating is ON
+        the IME service grows this to full-screen height so the user can
+        drag the inner panel anywhere on screen via the drag handle.
+      • Inner LinearLayout (`keyboard_inner`) — holds all the actual keys.
+        Positioned at gravity=bottom so docked mode stays at the bottom of
+        the screen. Floating mode adjusts top margin / translationX to move
+        the panel.
+      • Drag handle (`floating_drag_handle`) — shown only in floating mode.
+        Long, thin grabber bar at the very top of the inner panel.
+      • Resize handle (`floating_resize_handle`) — small corner control in
+        floating mode that cycles through small/medium/large widths.
+      • Suggestion strip → PC keys → panel container → bottom action row.
 
     Theme matching:
       • Sub-rows use transparent backgrounds so the user's chosen theme
@@ -27,239 +34,277 @@
         the look stays crisp at every theme.
     ──────────────────────────────────────────────────────────────────────────
 -->
-<LinearLayout
+<FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/keyboard_root"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:paddingTop="@dimen/keyboard_root_padding_top"
-    android:paddingBottom="@dimen/keyboard_root_padding_bottom"
-    android:paddingStart="4dp"
-    android:paddingEnd="4dp"
-    android:background="#1A1A2E">
+    android:layout_height="wrap_content">
 
-    <!-- Optional PC keys row (Esc/Tab/Ctrl/etc.) — toggled by settings -->
-    <HorizontalScrollView
-        android:id="@+id/pc_keys_scroll"
-        android:layout_width="match_parent"
-        android:layout_height="@dimen/row_pc_keys_height"
-        android:scrollbars="none"
-        android:background="@android:color/transparent"
-        android:visibility="gone">
-
-        <LinearLayout
-            android:id="@+id/row_pc_keys"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingStart="4dp"
-            android:paddingEnd="4dp" />
-    </HorizontalScrollView>
-
-    <!-- Single panel container — the active panel view is swapped here -->
-    <FrameLayout
-        android:id="@+id/panel_container"
+    <LinearLayout
+        android:id="@+id/keyboard_inner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@android:color/transparent" />
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:paddingTop="@dimen/keyboard_root_padding_top"
+        android:paddingBottom="@dimen/keyboard_root_padding_bottom"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:background="#1A1A2E">
 
-    <!-- Bottom action row — settings/symbols/emoji/space/arrows/enter -->
-    <LinearLayout
-        android:id="@+id/row_nav"
-        android:layout_width="match_parent"
-        android:layout_height="@dimen/row_nav_height"
-        android:orientation="horizontal"
-        android:paddingStart="2dp"
-        android:paddingEnd="2dp"
-        android:layout_marginTop="2dp"
-        android:gravity="center_vertical">
+        <!-- Floating drag handle — a thin grab-bar that's only visible when
+             the user has enabled floating mode. Tapping & dragging this bar
+             repositions the whole keyboard panel anywhere within the IME
+             window. -->
+        <FrameLayout
+            android:id="@+id/floating_drag_handle"
+            android:layout_width="match_parent"
+            android:layout_height="22dp"
+            android:visibility="gone">
 
-        <!-- Symbols panel toggle (?123 — math symbols icon).
-             Placed first to put the high-frequency control under the thumb. -->
-        <ImageButton
-            android:id="@+id/btn_symbols_panel"
-            android:layout_width="@dimen/key_action_width"
-            android:layout_height="match_parent"
-            android:layout_margin="@dimen/key_margin"
-            android:src="@drawable/math_symbols"
-            android:scaleType="fitCenter"
-            android:padding="10dp"
-            android:background="#252545"
-            android:contentDescription="Symbols" />
+            <View
+                android:layout_width="60dp"
+                android:layout_height="5dp"
+                android:layout_gravity="center"
+                android:background="#55E8E8FF" />
+        </FrameLayout>
 
-        <!-- Emoji panel. Hidden in Gboard-style mode. -->
-        <ImageButton
-            android:id="@+id/btn_emoji"
-            android:layout_width="@dimen/key_action_width"
-            android:layout_height="match_parent"
-            android:layout_margin="@dimen/key_margin"
-            android:src="@drawable/mood_smile"
-            android:scaleType="fitCenter"
-            android:padding="9dp"
-            android:background="#252545"
-            android:contentDescription="Emoji" />
+        <!-- Optional PC keys row (Esc/Tab/Ctrl/etc.) — toggled by settings -->
+        <HorizontalScrollView
+            android:id="@+id/pc_keys_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/row_pc_keys_height"
+            android:scrollbars="none"
+            android:background="@android:color/transparent"
+            android:visibility="gone">
 
-        <!-- Comma (Gboard-style bottom row). Hidden by default; Java
-             reveals it when the gboard_style_row pref is enabled. -->
-        <Button
-            android:id="@+id/btn_comma"
-            android:layout_width="@dimen/key_action_width"
-            android:layout_height="match_parent"
-            android:layout_margin="@dimen/key_margin"
-            android:text=","
-            android:textSize="18sp"
-            android:textColor="#E8E8FF"
-            android:textAllCaps="false"
-            android:background="#252545"
-            android:visibility="gone"
-            android:contentDescription="Comma" />
+            <LinearLayout
+                android:id="@+id/row_pc_keys"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp" />
+        </HorizontalScrollView>
 
-        <!-- Undo -->
-        <ImageButton
-            android:id="@+id/btn_undo"
-            android:layout_width="@dimen/key_undo_width"
-            android:layout_height="match_parent"
-            android:layout_margin="@dimen/key_margin"
-            android:src="@drawable/arrow_back_up"
-            android:scaleType="fitCenter"
-            android:padding="8dp"
-            android:background="#252545"
-            android:contentDescription="Undo" />
+        <!-- Single panel container — the active panel view is swapped here -->
+        <FrameLayout
+            android:id="@+id/panel_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent" />
 
-        <!-- Space (largest weight so it dominates the row) -->
-        <Button
-            android:id="@+id/btn_space"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="7"
-            android:layout_margin="@dimen/key_margin"
-            android:text="space"
-            android:textSize="12sp"
-            android:textColor="#E8E8FF"
-            android:background="#252545" />
-
-        <!-- Period (Gboard-style bottom row). Mirrors btn_comma on the
-             right of space. Long-press toggles the cursor controller panel
-             (one button instead of the four-arrow cluster). -->
-        <Button
-            android:id="@+id/btn_period"
-            android:layout_width="@dimen/key_action_width"
-            android:layout_height="match_parent"
-            android:layout_margin="@dimen/key_margin"
-            android:text="."
-            android:textSize="18sp"
-            android:textColor="#E8E8FF"
-            android:textAllCaps="false"
-            android:background="#252545"
-            android:visibility="gone"
-            android:contentDescription="Period" />
-
-        <!-- Redo -->
-        <ImageButton
-            android:id="@+id/btn_redo"
-            android:layout_width="@dimen/key_undo_width"
-            android:layout_height="match_parent"
-            android:layout_margin="@dimen/key_margin"
-            android:src="@drawable/arrow_forward_up"
-            android:scaleType="fitCenter"
-            android:padding="8dp"
-            android:background="#252545"
-            android:contentDescription="Redo" />
-
-        <!-- Up/Down arrow cluster — hidden in Gboard-style mode.
-             The id `arrow_cluster_vertical` lets Java toggle the whole
-             cluster (including its margins) rather than each child. -->
+        <!-- Bottom action row — settings/symbols/emoji/space/arrows/enter -->
         <LinearLayout
-            android:id="@+id/arrow_cluster_vertical"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:layout_marginStart="2dp">
+            android:id="@+id/row_nav"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/row_nav_height"
+            android:orientation="horizontal"
+            android:paddingStart="2dp"
+            android:paddingEnd="2dp"
+            android:layout_marginTop="2dp"
+            android:gravity="center_vertical">
 
+            <!-- Symbols panel toggle (?123 — math symbols icon).
+                 Placed first to put the high-frequency control under the thumb. -->
             <ImageButton
-                android:id="@+id/btn_arrow_up"
-                android:layout_width="@dimen/key_arrow_width"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:layout_marginBottom="1dp"
-                android:src="@drawable/arrow_badge_up"
+                android:id="@+id/btn_symbols_panel"
+                android:layout_width="@dimen/key_action_width"
+                android:layout_height="match_parent"
+                android:layout_margin="@dimen/key_margin"
+                android:src="@drawable/math_symbols"
+                android:scaleType="fitCenter"
+                android:padding="10dp"
                 android:background="#252545"
-                android:scaleType="fitCenter" />
+                android:contentDescription="Symbols" />
 
+            <!-- Emoji panel. Hidden in Gboard-style mode. -->
             <ImageButton
-                android:id="@+id/btn_arrow_down"
-                android:layout_width="@dimen/key_arrow_width"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:layout_marginTop="1dp"
-                android:src="@drawable/arrow_badge_down"
+                android:id="@+id/btn_emoji"
+                android:layout_width="@dimen/key_action_width"
+                android:layout_height="match_parent"
+                android:layout_margin="@dimen/key_margin"
+                android:src="@drawable/mood_smile"
+                android:scaleType="fitCenter"
+                android:padding="9dp"
                 android:background="#252545"
-                android:scaleType="fitCenter" />
-        </LinearLayout>
+                android:contentDescription="Emoji" />
 
-        <!-- Left/Right arrow cluster — see arrow_cluster_vertical above. -->
-        <LinearLayout
-            android:id="@+id/arrow_cluster_horizontal"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:layout_marginStart="2dp">
-
-            <ImageButton
-                android:id="@+id/btn_arrow_left"
-                android:layout_width="@dimen/key_arrow_width"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:layout_marginBottom="1dp"
-                android:src="@drawable/arrow_badge_left"
+            <!-- Comma (Gboard-style bottom row). Hidden by default; Java
+                 reveals it when the gboard_style_row pref is enabled. -->
+            <Button
+                android:id="@+id/btn_comma"
+                android:layout_width="@dimen/key_action_width"
+                android:layout_height="match_parent"
+                android:layout_margin="@dimen/key_margin"
+                android:text=","
+                android:textSize="18sp"
+                android:textColor="#E8E8FF"
+                android:textAllCaps="false"
                 android:background="#252545"
-                android:scaleType="fitCenter" />
+                android:visibility="gone"
+                android:contentDescription="Comma" />
 
+            <!-- Undo -->
             <ImageButton
-                android:id="@+id/btn_arrow_right"
-                android:layout_width="@dimen/key_arrow_width"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:layout_marginTop="1dp"
+                android:id="@+id/btn_undo"
+                android:layout_width="@dimen/key_undo_width"
+                android:layout_height="match_parent"
+                android:layout_margin="@dimen/key_margin"
+                android:src="@drawable/arrow_back_up"
+                android:scaleType="fitCenter"
+                android:padding="8dp"
+                android:background="#252545"
+                android:contentDescription="Undo" />
+
+            <!-- Space (largest weight so it dominates the row) -->
+            <Button
+                android:id="@+id/btn_space"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="7"
+                android:layout_margin="@dimen/key_margin"
+                android:text="space"
+                android:textSize="12sp"
+                android:textColor="#E8E8FF"
+                android:background="#252545" />
+
+            <!-- Period (Gboard-style bottom row). Mirrors btn_comma on the
+                 right of space. Long-press toggles the cursor controller panel
+                 (one button instead of the four-arrow cluster). -->
+            <Button
+                android:id="@+id/btn_period"
+                android:layout_width="@dimen/key_action_width"
+                android:layout_height="match_parent"
+                android:layout_margin="@dimen/key_margin"
+                android:text="."
+                android:textSize="18sp"
+                android:textColor="#E8E8FF"
+                android:textAllCaps="false"
+                android:background="#252545"
+                android:visibility="gone"
+                android:contentDescription="Period" />
+
+            <!-- Redo -->
+            <ImageButton
+                android:id="@+id/btn_redo"
+                android:layout_width="@dimen/key_undo_width"
+                android:layout_height="match_parent"
+                android:layout_margin="@dimen/key_margin"
+                android:src="@drawable/arrow_forward_up"
+                android:scaleType="fitCenter"
+                android:padding="8dp"
+                android:background="#252545"
+                android:contentDescription="Redo" />
+
+            <!-- Up/Down arrow cluster — hidden in Gboard-style mode.
+                 The id `arrow_cluster_vertical` lets Java toggle the whole
+                 cluster (including its margins) rather than each child. -->
+            <LinearLayout
+                android:id="@+id/arrow_cluster_vertical"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:layout_marginStart="2dp">
+
+                <ImageButton
+                    android:id="@+id/btn_arrow_up"
+                    android:layout_width="@dimen/key_arrow_width"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginBottom="1dp"
+                    android:src="@drawable/arrow_badge_up"
+                    android:background="#252545"
+                    android:scaleType="fitCenter" />
+
+                <ImageButton
+                    android:id="@+id/btn_arrow_down"
+                    android:layout_width="@dimen/key_arrow_width"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginTop="1dp"
+                    android:src="@drawable/arrow_badge_down"
+                    android:background="#252545"
+                    android:scaleType="fitCenter" />
+            </LinearLayout>
+
+            <!-- Left/Right arrow cluster — see arrow_cluster_vertical above. -->
+            <LinearLayout
+                android:id="@+id/arrow_cluster_horizontal"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:layout_marginStart="2dp">
+
+                <ImageButton
+                    android:id="@+id/btn_arrow_left"
+                    android:layout_width="@dimen/key_arrow_width"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginBottom="1dp"
+                    android:src="@drawable/arrow_badge_left"
+                    android:background="#252545"
+                    android:scaleType="fitCenter" />
+
+                <ImageButton
+                    android:id="@+id/btn_arrow_right"
+                    android:layout_width="@dimen/key_arrow_width"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginTop="1dp"
+                    android:src="@drawable/arrow_badge_right"
+                    android:background="#252545"
+                    android:scaleType="fitCenter" />
+            </LinearLayout>
+
+            <!-- Single-button cursor toggle — only visible in Gboard-style
+                 mode. Tapping it replaces the keyboard panel with a generous
+                 D-pad controller (CURSOR PanelMode); tapping again returns to
+                 the keyboard. Lets the bottom row stay uncluttered while
+                 keeping cursor control one tap away. -->
+            <ImageButton
+                android:id="@+id/btn_cursor_panel"
+                android:layout_width="@dimen/key_action_width"
+                android:layout_height="match_parent"
+                android:layout_margin="@dimen/key_margin"
                 android:src="@drawable/arrow_badge_right"
+                android:scaleType="fitCenter"
+                android:padding="8dp"
                 android:background="#252545"
-                android:scaleType="fitCenter" />
+                android:visibility="gone"
+                android:contentDescription="Cursor controller" />
+
+            <!-- Enter / IME action (icon by default; switched to text label
+                 at runtime when the active EditText specifies an IME action).
+                 Stays a Button so the IME service can swap its label between
+                 ↵ / Go / Done / Search / Send via setText(). -->
+            <Button
+                android:id="@+id/btn_enter"
+                android:layout_width="@dimen/key_enter_width"
+                android:layout_height="match_parent"
+                android:layout_margin="@dimen/key_margin"
+                android:text=""
+                android:textSize="14sp"
+                android:textColor="#00E5FF"
+                android:textAllCaps="false"
+                android:background="#252545"
+                android:singleLine="true" />
         </LinearLayout>
-
-        <!-- Single-button cursor toggle — only visible in Gboard-style
-             mode. Tapping it replaces the keyboard panel with a generous
-             D-pad controller (CURSOR PanelMode); tapping again returns to
-             the keyboard. Lets the bottom row stay uncluttered while
-             keeping cursor control one tap away. -->
-        <ImageButton
-            android:id="@+id/btn_cursor_panel"
-            android:layout_width="@dimen/key_action_width"
-            android:layout_height="match_parent"
-            android:layout_margin="@dimen/key_margin"
-            android:src="@drawable/arrow_badge_right"
-            android:scaleType="fitCenter"
-            android:padding="8dp"
-            android:background="#252545"
-            android:visibility="gone"
-            android:contentDescription="Cursor controller" />
-
-        <!-- Enter / IME action (icon by default; switched to text label
-             at runtime when the active EditText specifies an IME action).
-             Stays a Button so the IME service can swap its label between
-             ↵ / Go / Done / Search / Send via setText(). -->
-        <Button
-            android:id="@+id/btn_enter"
-            android:layout_width="@dimen/key_enter_width"
-            android:layout_height="match_parent"
-            android:layout_margin="@dimen/key_margin"
-            android:text=""
-            android:textSize="14sp"
-            android:textColor="#00E5FF"
-            android:textAllCaps="false"
-            android:background="#252545"
-            android:singleLine="true" />
     </LinearLayout>
 
-</LinearLayout>
+    <!-- Floating resize handle — bottom-right pinch corner. Tapping cycles
+         through three width presets (compact / medium / wide) so users can
+         resize without precise drag input. Visible only in floating mode. -->
+    <ImageView
+        android:id="@+id/floating_resize_handle"
+        android:layout_width="34dp"
+        android:layout_height="34dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="6dp"
+        android:layout_marginBottom="6dp"
+        android:padding="6dp"
+        android:src="@drawable/arrow_badge_right"
+        android:contentDescription="Resize"
+        android:visibility="gone" />
+</FrameLayout>
