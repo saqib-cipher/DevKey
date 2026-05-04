@@ -3,12 +3,23 @@
     settings_activity.xml
     ──────────────────────────────────────────────────────────────────────────
     The full Settings UI for CodeKeys, separated from Java for readability.
-    Place in: app/src/main/res/layout/settings_activity.xml
 
-    The Java side ({@link com.codekeys.ime.SettingsActivity}) only needs to
-    inflate this layout, look up views by ID, and wire listeners. Theme colors
-    are still applied programmatically because they are user-configurable at
-    runtime, so we keep neutral baseline colors here.
+    Surface design:
+      • Page background uses a deep navy so accent / cyan colours read
+        bright against it.
+      • Cards (preview / enable / preferences / themes / etc) all share
+        @drawable/settings_card_bg — a rounded-rect with a subtle 1dp
+        stroke. Java reads view backgrounds as cards, so any container
+        that previously used a flat #202036 fill now uses the drawable
+        for a uniform, rounded look across the page.
+      • Buttons split into primary (accent-tinted), secondary (neutral
+        surface), and danger (Reset) variants — see
+        settings_button_*.xml. Each is rounded so the page reads as a
+        modern Material-ish surface even though we don't depend on
+        Material at runtime.
+      • Inputs use settings_input_bg so the inset feels recessed.
+      • android:animateLayoutChanges on every dynamic container so card
+        re-renders fade smoothly instead of snap-replacing.
     ──────────────────────────────────────────────────────────────────────────
 -->
 <ScrollView
@@ -17,7 +28,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    android:background="#1A1A2E">
+    android:background="#15152A">
 
     <!--
         descendantFocusability + focusableInTouchMode together steal initial
@@ -25,6 +36,10 @@
         the soft keyboard does not auto-pop when the activity opens or after
         a theme rebuild. Users still get focus + keyboard the moment they
         actually tap into one of the EditText fields.
+
+        animateLayoutChanges turns every add/remove of a child container into
+        a smooth fade/translate transition so theme switches and dynamic
+        container rebuilds feel polished instead of snap-replacing.
     -->
     <LinearLayout
         android:id="@+id/settings_root"
@@ -34,7 +49,8 @@
         android:padding="20dp"
         android:focusable="true"
         android:focusableInTouchMode="true"
-        android:descendantFocusability="beforeDescendants">
+        android:descendantFocusability="beforeDescendants"
+        android:animateLayoutChanges="true">
 
         <!-- ══════════════════════════════════════════════════════
              Title bar
@@ -51,7 +67,7 @@
                 android:layout_width="6dp"
                 android:layout_height="36dp"
                 android:layout_marginEnd="14dp"
-                android:background="#00E5FF" />
+                android:background="@drawable/settings_title_swatch" />
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -66,7 +82,7 @@
                     android:text="CodeKeys"
                     android:textSize="26sp"
                     android:textStyle="bold"
-                    android:textColor="#E8E8FF" />
+                    android:textColor="#F2F2FF" />
 
                 <TextView
                     android:id="@+id/subtitle"
@@ -87,7 +103,7 @@
                 android:textStyle="bold"
                 android:textAllCaps="false"
                 android:textColor="#00E5FF"
-                android:background="#252545" />
+                android:background="@drawable/settings_button_secondary" />
         </LinearLayout>
 
         <!-- ══════════════════════════════════════════════════════
@@ -103,8 +119,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="14dp"
-            android:background="#202036">
+            android:padding="16dp"
+            android:background="@drawable/settings_card_bg">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -119,10 +135,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:hint="Try typing here…"
-                android:textColor="#E8E8FF"
+                android:textColor="#F2F2FF"
                 android:textColorHint="#6A6A85"
-                android:background="#181826"
-                android:padding="12dp"
+                android:background="@drawable/settings_input_bg"
+                android:padding="14dp"
                 android:textSize="14sp"
                 android:minLines="3"
                 android:gravity="top|start"
@@ -132,13 +148,15 @@
                 android:id="@+id/btn_clear_preview"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="10dp"
                 android:layout_gravity="end"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
                 android:text="Clear"
                 android:textAllCaps="false"
                 android:textSize="11sp"
                 android:textColor="#9494B5"
-                android:background="#181826" />
+                android:background="@drawable/settings_button_secondary" />
         </LinearLayout>
 
         <!-- ══════════════════════════════════════════════════════
@@ -149,35 +167,37 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="16dp"
+            android:padding="18dp"
+            android:layout_marginTop="6dp"
             android:layout_marginBottom="20dp"
-            android:background="#262642">
+            android:background="@drawable/settings_card_bg">
 
             <Button
                 android:id="@+id/btn_enable_ime"
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginBottom="8dp"
+                android:layout_height="50dp"
+                android:layout_marginBottom="10dp"
                 android:text="① Enable CodeKeys in System Settings  →"
                 android:textAllCaps="false"
                 android:textSize="13sp"
-                android:textColor="#00E5FF"
-                android:background="#2D2D55" />
+                android:textStyle="bold"
+                android:textColor="#7BE8FF"
+                android:background="@drawable/settings_button_primary" />
 
             <Button
                 android:id="@+id/btn_pick_ime"
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
+                android:layout_height="50dp"
                 android:text="② Switch to CodeKeys (open IME picker)  →"
                 android:textAllCaps="false"
                 android:textSize="13sp"
-                android:textColor="#E8E8FF"
-                android:background="#252545" />
+                android:textColor="#F2F2FF"
+                android:background="@drawable/settings_button_secondary" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:paddingTop="10dp"
+                android:paddingTop="12dp"
                 android:text="Tap ① to enable, then ② to activate CodeKeys as your keyboard."
                 android:textSize="11sp"
                 android:textColor="#9494B5" />
@@ -195,7 +215,10 @@
             android:id="@+id/preferences_container"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:orientation="vertical"
+            android:padding="6dp"
+            android:background="@drawable/settings_card_bg"
+            android:animateLayoutChanges="true" />
 
         <!-- ══════════════════════════════════════════════════════
              THEMES
@@ -237,7 +260,10 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:visibility="gone"
-            android:layout_marginTop="6dp" />
+            android:padding="6dp"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/settings_card_bg"
+            android:animateLayoutChanges="true" />
 
         <!-- ══════════════════════════════════════════════════════
              DEFAULT LANGUAGE MODE
@@ -266,7 +292,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="center_vertical" />
+                android:gravity="center_vertical"
+                android:animateLayoutChanges="true" />
         </HorizontalScrollView>
 
         <!-- ══════════════════════════════════════════════════════
@@ -282,8 +309,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="14dp"
-            android:background="#202036">
+            android:padding="16dp"
+            android:background="@drawable/settings_card_bg">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -305,10 +332,10 @@
                     android:layout_weight="1"
                     android:layout_height="wrap_content"
                     android:hint="e.g. RUST"
-                    android:textColor="#E8E8FF"
+                    android:textColor="#F2F2FF"
                     android:textColorHint="#6A6A85"
-                    android:background="#181826"
-                    android:padding="10dp"
+                    android:background="@drawable/settings_input_bg"
+                    android:padding="12dp"
                     android:textSize="13sp"
                     android:maxLines="1"
                     android:imeOptions="actionDone"
@@ -317,12 +344,15 @@
                 <Button
                     android:id="@+id/btn_add_lang"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
+                    android:layout_height="46dp"
+                    android:layout_marginStart="10dp"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp"
                     android:text="Add"
                     android:textAllCaps="false"
-                    android:textColor="#00E5FF"
-                    android:background="#2D2D55" />
+                    android:textStyle="bold"
+                    android:textColor="#7BE8FF"
+                    android:background="@drawable/settings_button_primary" />
             </LinearLayout>
 
             <LinearLayout
@@ -330,7 +360,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:paddingTop="10dp" />
+                android:paddingTop="10dp"
+                android:animateLayoutChanges="true" />
         </LinearLayout>
 
         <!-- ══════════════════════════════════════════════════════
@@ -346,8 +377,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="14dp"
-            android:background="#1F1F33" />
+            android:padding="16dp"
+            android:background="@drawable/settings_card_bg"
+            android:animateLayoutChanges="true" />
 
         <!-- ══════════════════════════════════════════════════════
              BACKUP / RESTORE  (JSON import / export)
@@ -362,8 +394,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="14dp"
-            android:background="#202036">
+            android:padding="16dp"
+            android:background="@drawable/settings_card_bg">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -371,7 +403,7 @@
                 android:text="Export your themes, language snippets, and settings as JSON, then paste it back later or on another device."
                 android:textSize="11sp"
                 android:textColor="#9494B5"
-                android:paddingBottom="10dp" />
+                android:paddingBottom="12dp" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -382,25 +414,26 @@
                     android:id="@+id/btn_export"
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:layout_height="44dp"
-                    android:layout_marginEnd="4dp"
+                    android:layout_height="46dp"
+                    android:layout_marginEnd="6dp"
                     android:text="⇪ Export"
                     android:textAllCaps="false"
+                    android:textStyle="bold"
                     android:textSize="13sp"
-                    android:textColor="#00E5FF"
-                    android:background="#2D2D55" />
+                    android:textColor="#7BE8FF"
+                    android:background="@drawable/settings_button_primary" />
 
                 <Button
                     android:id="@+id/btn_import"
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:layout_height="44dp"
-                    android:layout_marginStart="4dp"
+                    android:layout_height="46dp"
+                    android:layout_marginStart="6dp"
                     android:text="⇩ Import"
                     android:textAllCaps="false"
                     android:textSize="13sp"
-                    android:textColor="#E8E8FF"
-                    android:background="#252545" />
+                    android:textColor="#F2F2FF"
+                    android:background="@drawable/settings_button_secondary" />
             </LinearLayout>
         </LinearLayout>
 
@@ -415,12 +448,13 @@
         <Button
             android:id="@+id/btn_reset"
             android:layout_width="match_parent"
-            android:layout_height="50dp"
+            android:layout_height="52dp"
             android:text="Reset All Settings to Default"
             android:textAllCaps="false"
             android:textSize="14sp"
-            android:textColor="#FF6666"
-            android:background="#22FF0000" />
+            android:textStyle="bold"
+            android:textColor="#FF8888"
+            android:background="@drawable/settings_button_danger" />
 
         <!-- ══════════════════════════════════════════════════════
              Footer
@@ -429,7 +463,7 @@
             android:id="@+id/footer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="28dp"
             android:gravity="center"
             android:text="CodeKeys v1.0  •  Built for developers"
             android:textSize="11sp"

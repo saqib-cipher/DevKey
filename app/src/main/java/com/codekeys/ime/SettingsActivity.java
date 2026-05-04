@@ -144,6 +144,15 @@ public class SettingsActivity extends AppCompatActivity {
         renderLanguages();
         renderCustomLanguages();
         renderSnippetReference();
+
+        // Smooth fade-in on launch — gives the activity a polished entry
+        // instead of popping into place. Cheap (single ViewPropertyAnimator)
+        // and runs after rendering so users always see content fading in,
+        // never an empty page.
+        if (root != null) {
+            root.setAlpha(0f);
+            root.animate().alpha(1f).setDuration(280L).start();
+        }
     }
 
     /**
@@ -249,43 +258,78 @@ public class SettingsActivity extends AppCompatActivity {
         int accent = prefs.getInt("accent_color", 0xFF00E5FF);
         int textCol = prefs.getInt("text_color",  0xFFE8E8FF);
 
-        root.setBackgroundColor(bg);
-        ((View) root.getChildAt(0)).setBackgroundColor(bg);
-        titleSwatch.setBackgroundColor(accent);
+        // Page surface — slightly darker than the user's bg colour so the
+        // rounded card surfaces (which use bg) read as elevated panels.
+        int pageBg = blend(bg, 0xFF000000, 0.18f);
+        root.setBackgroundColor(pageBg);
+        ((View) root.getChildAt(0)).setBackgroundColor(pageBg);
+        titleSwatch.setBackground(themedRoundedFill(accent, accent, dp(3), 0));
         title.setTextColor(textCol);
         subtitle.setTextColor(dim(textCol));
         footer.setTextColor(dim(textCol));
 
-        enableCard.setBackgroundColor(blend(bg, accent, 0.08f));
-        btnEnableIme.setBackgroundColor(blend(bg, accent, 0.15f));
+        // Card surfaces — same rounded shape, themed fill + low-alpha border.
+        int cardFill = blend(bg, 0xFFFFFFFF, 0.05f);
+        int cardStroke = blend(textCol, 0x00000000, 0.85f) | 0x1F000000;
+        int cardRadius = dp(18);
+        int cardStrokeW = dp(1);
+
+        enableCard.setBackground(themedRoundedFill(cardFill, cardStroke, cardRadius, cardStrokeW));
+        snippetRefBox.setBackground(themedRoundedFill(cardFill, cardStroke, cardRadius, cardStrokeW));
+        if (previewCard != null) previewCard.setBackground(themedRoundedFill(cardFill, cardStroke, cardRadius, cardStrokeW));
+        if (backupCard != null) backupCard.setBackground(themedRoundedFill(cardFill, cardStroke, cardRadius, cardStrokeW));
+        if (preferencesContainer != null) preferencesContainer.setBackground(themedRoundedFill(cardFill, cardStroke, cardRadius, cardStrokeW));
+        // Custom-language card and custom-theme container use the same surface.
+        View customLangCard = findViewById(R.id.custom_lang_card);
+        if (customLangCard != null) customLangCard.setBackground(themedRoundedFill(cardFill, cardStroke, cardRadius, cardStrokeW));
+        if (customThemeContainer != null) customThemeContainer.setBackground(themedRoundedFill(cardFill, cardStroke, cardRadius, cardStrokeW));
+
+        // Primary CTAs — accent-tinted rounded fill.
+        int btnPrimaryRadius = dp(12);
+        int primaryFill = blend(bg, accent, 0.18f);
+        int primaryStroke = blend(accent, 0x00000000, 0.7f) | 0x4D000000;
+        btnEnableIme.setBackground(themedRoundedFill(primaryFill, primaryStroke, btnPrimaryRadius, cardStrokeW));
         btnEnableIme.setTextColor(accent);
-        btnPickIme.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.05f));
+        btnPickIme.setBackground(themedRoundedFill(blend(bg, 0xFFFFFFFF, 0.07f), cardStroke, btnPrimaryRadius, cardStrokeW));
         btnPickIme.setTextColor(textCol);
 
-        snippetRefBox.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.03f));
-
-        if (previewCard != null) previewCard.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
         if (editPreview != null) {
             editPreview.setTextColor(textCol);
             editPreview.setHintTextColor(dim(textCol));
-            editPreview.setBackgroundColor(blend(bg, 0xFF000000, 0.25f));
+            editPreview.setBackground(themedRoundedFill(blend(bg, 0xFF000000, 0.30f), cardStroke, dp(10), cardStrokeW));
         }
         if (btnClearPreview != null) {
             btnClearPreview.setTextColor(dim(textCol));
-            btnClearPreview.setBackgroundColor(blend(bg, 0xFF000000, 0.25f));
+            btnClearPreview.setBackground(themedRoundedFill(blend(bg, 0xFF000000, 0.30f), cardStroke, btnPrimaryRadius, cardStrokeW));
         }
         if (btnInfo != null) {
             btnInfo.setTextColor(accent);
-            btnInfo.setBackgroundColor(blend(bg, accent, 0.15f));
+            btnInfo.setBackground(themedRoundedFill(blend(bg, accent, 0.18f), primaryStroke, btnPrimaryRadius, cardStrokeW));
         }
-        if (backupCard != null) backupCard.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
         if (btnExport != null) {
             btnExport.setTextColor(accent);
-            btnExport.setBackgroundColor(blend(bg, accent, 0.15f));
+            btnExport.setBackground(themedRoundedFill(primaryFill, primaryStroke, btnPrimaryRadius, cardStrokeW));
         }
         if (btnImport != null) {
             btnImport.setTextColor(textCol);
-            btnImport.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.05f));
+            btnImport.setBackground(themedRoundedFill(blend(bg, 0xFFFFFFFF, 0.07f), cardStroke, btnPrimaryRadius, cardStrokeW));
+        }
+        // Add language entry button picks up the same primary surface.
+        Button btnAddLangLocal = findViewById(R.id.btn_add_lang);
+        EditText editNewLangLocal = findViewById(R.id.edit_new_lang);
+        if (btnAddLangLocal != null) {
+            btnAddLangLocal.setTextColor(accent);
+            btnAddLangLocal.setBackground(themedRoundedFill(primaryFill, primaryStroke, btnPrimaryRadius, cardStrokeW));
+        }
+        if (editNewLangLocal != null) {
+            editNewLangLocal.setTextColor(textCol);
+            editNewLangLocal.setHintTextColor(dim(textCol));
+            editNewLangLocal.setBackground(themedRoundedFill(blend(bg, 0xFF000000, 0.30f), cardStroke, dp(10), cardStrokeW));
+        }
+        // Reset button — destructive, red-tinted rounded fill.
+        if (btnReset != null) {
+            btnReset.setTextColor(0xFFFF8888);
+            btnReset.setBackground(themedRoundedFill(0x33FF3344, 0x55FF6666, btnPrimaryRadius, cardStrokeW));
         }
     }
 
@@ -1472,48 +1516,119 @@ public class SettingsActivity extends AppCompatActivity {
         int accent = prefs.getInt("accent_color", 0xFF00E5FF);
         int keyCol = prefs.getInt("key_color", 0xFF252545);
 
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setBackgroundColor(bg);
-        row.setPadding(dp(14), dp(12), dp(14), dp(12));
-        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        rlp.setMargins(0, 0, 0, dp(3));
-        row.setLayoutParams(rlp);
+        // Card container — same layout vocabulary as the preset cards so the
+        // strip reads as one consistent set rather than "presets + odd-one-out".
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        android.graphics.drawable.GradientDrawable cardBg =
+                new android.graphics.drawable.GradientDrawable();
+        cardBg.setColor(bg);
+        cardBg.setCornerRadius(dp(16));
+        if (active) cardBg.setStroke(dp(2), accent);
+        card.setBackground(cardBg);
 
-        int[] swatches = { bg, keyCol, textCol, accent };
-        for (int c : swatches) {
-            View s = new View(this);
-            s.setBackgroundColor(c);
-            LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(20), dp(20));
-            slp.setMargins(0, 0, dp(4), 0);
-            s.setLayoutParams(slp);
-            row.addView(s);
-        }
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                dp(170), LinearLayout.LayoutParams.WRAP_CONTENT);
+        clp.setMargins(dp(4), dp(4), dp(4), dp(4));
+        card.setLayoutParams(clp);
+
+        // Title
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView nameView = new TextView(this);
         nameView.setText("✎ Custom");
-        nameView.setTextSize(13f);
+        nameView.setTextSize(14f);
+        nameView.setTypeface(Typeface.DEFAULT_BOLD);
         nameView.setTextColor(textCol);
         nameView.setLayoutParams(new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        nameView.setPadding(dp(10), 0, 0, 0);
-        row.addView(nameView);
+        titleRow.addView(nameView);
 
         if (active) {
             TextView check = new TextView(this);
-            check.setText("✓ active");
-            check.setTextSize(11f);
+            check.setText("✓");
+            check.setTextSize(13f);
+            check.setTypeface(Typeface.DEFAULT_BOLD);
             check.setTextColor(accent);
-            row.addView(check);
+            titleRow.addView(check);
         }
+        card.addView(titleRow);
 
-        row.setOnClickListener(v -> {
+        TextView tagline = new TextView(this);
+        tagline.setText("Pick your own colours");
+        tagline.setTextSize(11f);
+        tagline.setTextColor(dimColor(textCol));
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        tlp.setMargins(0, dp(2), 0, dp(10));
+        tagline.setLayoutParams(tlp);
+        card.addView(tagline);
+
+        // Swatch strip — same shape as the preset cards. Uses the user's
+        // current custom colours so they see what's saved.
+        LinearLayout swatchRow = new LinearLayout(this);
+        swatchRow.setOrientation(LinearLayout.HORIZONTAL);
+        int[] swatches = { bg, keyCol, textCol, accent };
+        String[] swatchLabels = { "bg", "key", "txt", "acc" };
+        for (int si = 0; si < swatches.length; si++) {
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            col.setGravity(Gravity.CENTER_HORIZONTAL);
+            LinearLayout.LayoutParams colp = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            col.setLayoutParams(colp);
+
+            View dot = new View(this);
+            android.graphics.drawable.GradientDrawable dotBg =
+                    new android.graphics.drawable.GradientDrawable();
+            dotBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            dotBg.setColor(swatches[si]);
+            dotBg.setStroke(dp(1), dimColor(textCol));
+            dot.setBackground(dotBg);
+            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(22), dp(22));
+            dot.setLayoutParams(dlp);
+            col.addView(dot);
+
+            TextView lbl = new TextView(this);
+            lbl.setText(swatchLabels[si]);
+            lbl.setTextSize(9f);
+            lbl.setTextColor(dimColor(textCol));
+            lbl.setPadding(0, dp(3), 0, 0);
+            col.addView(lbl);
+
+            swatchRow.addView(col);
+        }
+        card.addView(swatchRow);
+
+        // Mock key preview — same as preset cards.
+        TextView keyPreview = new TextView(this);
+        keyPreview.setText("Aa");
+        keyPreview.setTextSize(15f);
+        keyPreview.setTypeface(Typeface.DEFAULT_BOLD);
+        keyPreview.setTextColor(textCol);
+        keyPreview.setGravity(Gravity.CENTER);
+        keyPreview.setPadding(0, dp(8), 0, dp(8));
+        android.graphics.drawable.GradientDrawable kbg =
+                new android.graphics.drawable.GradientDrawable();
+        kbg.setColor(keyCol);
+        kbg.setCornerRadius(dp(8));
+        keyPreview.setBackground(kbg);
+        LinearLayout.LayoutParams klp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        klp.setMargins(0, dp(10), 0, 0);
+        keyPreview.setLayoutParams(klp);
+        card.addView(keyPreview);
+
+        card.setOnClickListener(v -> {
             prefs.edit().putString("theme_kind", "custom").apply();
             renderThemes();
         });
-        return row;
+        return card;
     }
 
     /**
