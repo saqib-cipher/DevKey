@@ -205,11 +205,28 @@
             style="@style/SettingsHeader"
             android:text="THEMES" />
 
-        <LinearLayout
-            android:id="@+id/themes_container"
+        <!-- Themes are presented in a horizontal scroller so the user can
+             swipe through them like a Gboard-style theme picker. The
+             previous vertical list pushed the rest of the settings off
+             screen on small phones; this layout keeps each preset visible
+             as a richer detail card without crowding the page. -->
+        <HorizontalScrollView
+            android:id="@+id/themes_scroll"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:scrollbars="none"
+            android:overScrollMode="never"
+            android:clipToPadding="false"
+            android:paddingStart="2dp"
+            android:paddingEnd="2dp">
+
+            <LinearLayout
+                android:id="@+id/themes_container"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:animateLayoutChanges="true" />
+        </HorizontalScrollView>
 
         <!-- Custom theme customisation: only visible when the user has
              selected the Custom theme entry. Colour rows are rendered at

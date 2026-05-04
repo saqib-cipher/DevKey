@@ -1251,6 +1251,8 @@ public class SettingsActivity extends AppCompatActivity {
     // ─── Themes ───────────────────────────────────────────────────────────────
     private void renderThemes() {
         themesContainer.removeAllViews();
+        // animateLayoutChanges on themes_container in XML drives smooth fade /
+        // resize transitions when individual cards are added or removed.
         int currentBg = prefs.getInt("bg_color", 0xFF1A1A2E);
         boolean customSelected = "custom".equals(prefs.getString("theme_kind", "preset"));
 
@@ -1260,44 +1262,122 @@ public class SettingsActivity extends AppCompatActivity {
             final boolean isDark = activeThemeIsDark[i];
             boolean active = !customSelected && (currentBg == theme[0]);
 
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setBackgroundColor(theme[0]);
-            row.setPadding(dp(14), dp(12), dp(14), dp(12));
-            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            rlp.setMargins(0, 0, 0, dp(3));
-            row.setLayoutParams(rlp);
+            // Card container — vertical column with a rounded background
+            // showing the theme's actual bg colour so each card previews
+            // itself.
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(dp(14), dp(12), dp(14), dp(12));
+            android.graphics.drawable.GradientDrawable cardBg =
+                    new android.graphics.drawable.GradientDrawable();
+            cardBg.setColor(theme[0]);
+            cardBg.setCornerRadius(dp(16));
+            // Active card gets an accent outline so the user sees which
+            // preset is currently applied at a glance.
+            if (active) cardBg.setStroke(dp(2), theme[3]);
+            card.setBackground(cardBg);
 
-            int[] swatches = { theme[0], theme[1], theme[2], theme[3] };
-            for (int c : swatches) {
-                View s = new View(this);
-                s.setBackgroundColor(c);
-                LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(20), dp(20));
-                slp.setMargins(0, 0, dp(4), 0);
-                s.setLayoutParams(slp);
-                row.addView(s);
-            }
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                    dp(170), LinearLayout.LayoutParams.WRAP_CONTENT);
+            clp.setMargins(dp(4), dp(4), dp(4), dp(4));
+            card.setLayoutParams(clp);
+
+            // Title row (theme name + active indicator)
+            LinearLayout titleRow = new LinearLayout(this);
+            titleRow.setOrientation(LinearLayout.HORIZONTAL);
+            titleRow.setGravity(Gravity.CENTER_VERTICAL);
 
             TextView nameView = new TextView(this);
             nameView.setText(name);
-            nameView.setTextSize(13f);
+            nameView.setTextSize(14f);
+            nameView.setTypeface(Typeface.DEFAULT_BOLD);
             nameView.setTextColor(theme[2]);
             nameView.setLayoutParams(new LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-            nameView.setPadding(dp(10), 0, 0, 0);
-            row.addView(nameView);
+            titleRow.addView(nameView);
 
             if (active) {
                 TextView check = new TextView(this);
-                check.setText("✓ active");
-                check.setTextSize(11f);
+                check.setText("✓");
+                check.setTextSize(13f);
+                check.setTypeface(Typeface.DEFAULT_BOLD);
                 check.setTextColor(theme[3]);
-                row.addView(check);
+                titleRow.addView(check);
             }
+            card.addView(titleRow);
 
-            row.setOnClickListener(v -> {
+            // Tagline: a short description of the theme's mood / palette so
+            // the user gets more than just a name. Pulled from a deterministic
+            // helper so we don't have to maintain a parallel data table.
+            TextView tagline = new TextView(this);
+            tagline.setText(themeTagline(name, isDark));
+            tagline.setTextSize(11f);
+            tagline.setTextColor(dimColor(theme[2]));
+            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            tlp.setMargins(0, dp(2), 0, dp(10));
+            tagline.setLayoutParams(tlp);
+            card.addView(tagline);
+
+            // Swatch strip — bg / key / text / accent so the user sees the
+            // exact four colours the preset will apply.
+            LinearLayout swatchRow = new LinearLayout(this);
+            swatchRow.setOrientation(LinearLayout.HORIZONTAL);
+            int[] swatches = { theme[0], theme[1], theme[2], theme[3] };
+            String[] swatchLabels = { "bg", "key", "txt", "acc" };
+            for (int si = 0; si < swatches.length; si++) {
+                LinearLayout col = new LinearLayout(this);
+                col.setOrientation(LinearLayout.VERTICAL);
+                col.setGravity(Gravity.CENTER_HORIZONTAL);
+                LinearLayout.LayoutParams colp = new LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+                col.setLayoutParams(colp);
+
+                View dot = new View(this);
+                android.graphics.drawable.GradientDrawable dotBg =
+                        new android.graphics.drawable.GradientDrawable();
+                dotBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                dotBg.setColor(swatches[si]);
+                dotBg.setStroke(dp(1), dimColor(theme[2]));
+                dot.setBackground(dotBg);
+                LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(22), dp(22));
+                dot.setLayoutParams(dlp);
+                col.addView(dot);
+
+                TextView lbl = new TextView(this);
+                lbl.setText(swatchLabels[si]);
+                lbl.setTextSize(9f);
+                lbl.setTextColor(dimColor(theme[2]));
+                lbl.setPadding(0, dp(3), 0, 0);
+                col.addView(lbl);
+
+                swatchRow.addView(col);
+            }
+            card.addView(swatchRow);
+
+            // Mock "key" preview underneath so the user can see how the
+            // theme's accent will read on a sample button.
+            TextView keyPreview = new TextView(this);
+            keyPreview.setText("Aa");
+            keyPreview.setTextSize(15f);
+            keyPreview.setTypeface(Typeface.DEFAULT_BOLD);
+            keyPreview.setTextColor(theme[2]);
+            keyPreview.setGravity(Gravity.CENTER);
+            keyPreview.setPadding(0, dp(8), 0, dp(8));
+            android.graphics.drawable.GradientDrawable kbg =
+                    new android.graphics.drawable.GradientDrawable();
+            kbg.setColor(theme[1]);
+            kbg.setCornerRadius(dp(8));
+            keyPreview.setBackground(kbg);
+            LinearLayout.LayoutParams klp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            klp.setMargins(0, dp(10), 0, 0);
+            keyPreview.setLayoutParams(klp);
+            card.addView(keyPreview);
+
+            card.setOnClickListener(v -> {
                 // Selecting a preset applies the FULL theme — colours plus a
                 // coherent shape/size baseline — so the user gets a consistent
                 // look without having to also reset shape sliders by hand.
@@ -1341,13 +1421,43 @@ public class SettingsActivity extends AppCompatActivity {
                 applyThemeAndRerender();
             });
 
-            themesContainer.addView(row);
+            themesContainer.addView(card);
         }
 
         // Custom theme entry (always last). Selecting it shows the colour
         // pickers below; unselecting (by tapping any preset) hides them.
         themesContainer.addView(buildCustomThemeRow(customSelected));
         renderCustomThemePanel(customSelected);
+    }
+
+    /**
+     * Short, deterministic descriptor for a theme card. Keeps the cards
+     * informative without forcing a parallel name → description data table —
+     * we just key off the preset name with a small fallback table, then fall
+     * back to a generic "Dark / Light palette" tag.
+     */
+    private static String themeTagline(String name, boolean isDark) {
+        if (name == null) return isDark ? "Dark palette" : "Light palette";
+        String n = name.toLowerCase();
+        if (n.contains("amoled") || n.contains("black")) return "True-black, OLED-friendly";
+        if (n.contains("midnight") || n.contains("night")) return "Deep blue, low-glare";
+        if (n.contains("ocean") || n.contains("sea") || n.contains("aqua")) return "Cool blues & cyans";
+        if (n.contains("forest") || n.contains("mint") || n.contains("green")) return "Calm greens";
+        if (n.contains("sunset") || n.contains("warm") || n.contains("orange")) return "Warm sunset hues";
+        if (n.contains("rose") || n.contains("pink") || n.contains("blossom")) return "Soft pinks";
+        if (n.contains("paper") || n.contains("light") || n.contains("cream")) return "Bright, paper-like";
+        if (n.contains("mono") || n.contains("gray") || n.contains("grey")) return "Neutral monochrome";
+        if (n.contains("synth") || n.contains("neon") || n.contains("cyber")) return "Vibrant neon accents";
+        return isDark ? "Dark palette" : "Light palette";
+    }
+
+    /** Cheap "fade by ~50%" helper for secondary text on themed cards.
+     *  Halves the alpha channel — good enough for legible-but-subtle labels
+     *  without per-theme tuning. */
+    private static int dimColor(int color) {
+        int a = (color >>> 24) & 0xFF;
+        a = Math.max(0x60, a / 2);
+        return (a << 24) | (color & 0x00FFFFFF);
     }
 
     /**

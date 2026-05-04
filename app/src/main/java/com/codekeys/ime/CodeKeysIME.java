@@ -387,6 +387,9 @@ public class CodeKeysIME extends InputMethodService {
             case "key_height_scale":
                 applyKeyboardHeight();
                 break;
+            case "floating":
+                applyFloatingMode();
+                break;
             case "gboard_style_row":
                 // Toggle the bottom row layout live. If the cursor panel is
                 // currently open and the user disabled Gboard mode, drop back
@@ -534,6 +537,7 @@ public class CodeKeysIME extends InputMethodService {
         clipboardPanelView = null;
 
         applyTheme();
+        applyFloatingMode();
         switchPanel(PanelMode.KEYBOARD);
         return keyboardView;
     }
@@ -1683,7 +1687,7 @@ public class CodeKeysIME extends InputMethodService {
             Button chip;
             if (isClip) {
                 String label = content.length() > 24 ? content.substring(0, 24) + "…" : content;
-                chip = ui.makeChip("📋 " + label, clipBg, textCol, true);
+                chip = ui.makeChipWithIcon(label, clipBg, textCol, true, R.drawable.clipboard_text);
                 chip.setOnClickListener(v -> {
                     haptic(v);
                     inputEngine.commit(content);
@@ -2006,6 +2010,14 @@ public class CodeKeysIME extends InputMethodService {
         }
         ic.commitText(text, 1);
         if (activeMetaState != 0) clearTransientModifiers();
+        // End the bigram chain at sentence boundaries so unrelated sentences
+        // don't bleed into each other's predictions.
+        if (text != null && text.length() == 1) {
+            char c = text.charAt(0);
+            if (c == '.' || c == '?' || c == '!' || c == '\n') {
+                suggestionEngine.resetBigramContext();
+            }
+        }
     }
 
     /** Snippet / suggestion / clipboard insertion. Always replaces selection. */
@@ -2399,6 +2411,12 @@ public class CodeKeysIME extends InputMethodService {
         // additional refresh wiring is needed.
         content.addView(makePopupToggleRow("Auto Brackets", "auto_close", true, pw));
         content.addView(makePopupToggleRow("Auto List",     "auto_list",  true, pw));
+        // Floating mode shrinks the keyboard so it doesn't span the full
+        // screen width — useful on tablets / large phones where reaching the
+        // far keys with one thumb is awkward. The pref change is picked up
+        // by applyPrefChange("floating", ...) which re-applies the side
+        // margins to the keyboard root.
+        content.addView(makePopupToggleRow("Floating",      "floating",   false, pw));
 
         addPopupDivider(content);
 
@@ -2898,18 +2916,21 @@ public class CodeKeysIME extends InputMethodService {
      */
     private void applyKeyboardHeight() {
         float scale = getHeightScale();
-        scaleViewHeight(rowSuggestions, 42, scale);
-        scaleViewHeight(pcKeysScroll, 38, scale);
+        // Baseline heights mirror res/values/dimens.xml so the runtime scale
+        // multiplies against the same numbers the layout XML starts with.
+        // Keep these in sync with row_*_height in dimens.xml.
+        scaleViewHeight(rowSuggestions, 40, scale);
+        scaleViewHeight(pcKeysScroll, 36, scale);
         if (panelMode == PanelMode.KEYBOARD || panelMode == PanelMode.SYMBOLS) {
-            // Keyboard rows
-            scaleViewHeight(keyboardPanelView != null ? keyboardPanelView.findViewById(R.id.symbol_scroll) : null, 44, scale);
-            scaleViewHeight(keyboardPanelView != null ? keyboardPanelView.findViewById(R.id.snippet_scroll) : null, 40, scale);
-            scaleViewHeight(rowNumbers, 42, scale);
-            scaleViewHeight(rowLetters1, 48, scale);
-            scaleViewHeight(rowLetters2, 48, scale);
-            scaleViewHeight(keyboardPanelView != null ? keyboardPanelView.findViewById(R.id.row_letters3_wrap) : null, 48, scale);
+            // Keyboard rows — match Gboard-tight baseline.
+            scaleViewHeight(keyboardPanelView != null ? keyboardPanelView.findViewById(R.id.symbol_scroll) : null, 40, scale);
+            scaleViewHeight(keyboardPanelView != null ? keyboardPanelView.findViewById(R.id.snippet_scroll) : null, 36, scale);
+            scaleViewHeight(rowNumbers, 38, scale);
+            scaleViewHeight(rowLetters1, 52, scale);
+            scaleViewHeight(rowLetters2, 52, scale);
+            scaleViewHeight(keyboardPanelView != null ? keyboardPanelView.findViewById(R.id.row_letters3_wrap) : null, 52, scale);
         }
-        scaleViewHeight(keyboardView != null ? keyboardView.findViewById(R.id.row_nav) : null, 48, scale);
+        scaleViewHeight(keyboardView != null ? keyboardView.findViewById(R.id.row_nav) : null, 52, scale);
     }
 
     private void scaleViewHeight(View v, int baseDp, float scale) {
@@ -2918,6 +2939,39 @@ public class CodeKeysIME extends InputMethodService {
         if (lp == null) return;
         lp.height = Math.round(dp(baseDp) * scale);
         v.setLayoutParams(lp);
+    }
+
+    /**
+     * Toggles "floating" mode — when enabled the keyboard root gets symmetric
+     * side padding so the keys read as a centred pill instead of spanning the
+     * full screen width. This is a one-thumb-friendly variant; we don't
+     * reposition the IME (system IMEs always anchor to the bottom), just
+     * narrow the visual surface.
+     *
+     * The padding scales with screen width so on tablets the inset is more
+     * generous than on phones. Capped at 56dp/side so very small screens
+     * don't shrink the keys to unusable widths.
+     */
+    private void applyFloatingMode() {
+        if (keyboardView == null) return;
+        boolean floating = prefs.getBoolean("floating", false);
+        int sidePad = 0;
+        int bottomExtra = 0;
+        if (floating) {
+            int screenWidth = getResources().getDisplayMetrics().widthPixels;
+            // ~7% of screen width per side, capped between 16dp and 56dp.
+            sidePad = Math.max(dp(16), Math.min(dp(56), Math.round(screenWidth * 0.07f)));
+            bottomExtra = dp(8);
+        }
+        keyboardView.setPadding(sidePad, keyboardView.getPaddingTop(), sidePad,
+                keyboardView.getPaddingBottom() == 0 ? bottomExtra : keyboardView.getPaddingBottom());
+        // Also drop a touch of breathing room under the keyboard so the
+        // floating block reads as detached from the navigation bar.
+        if (floating) {
+            ViewGroup.LayoutParams lp = keyboardView.getLayoutParams();
+            if (lp != null) keyboardView.setLayoutParams(lp);
+        }
+        keyboardView.requestLayout();
     }
 
     // ─── PC keys row ─────────────────────────────────────────────────────────

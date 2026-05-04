@@ -42,6 +42,8 @@ final class SuggestionEngine {
 
     /** Pref key for the persisted frequency map ("word\u0001count"-delimited). */
     private static final String PREFS_KEY = "user_word_freq";
+    /** Pref key for the persisted bigram map ("prev word\u0001next word\u0001count"). */
+    private static final String BIGRAM_KEY = "user_word_bigrams";
     /** Cap on candidates returned to the strip — readability vs. recall trade-off. */
     private static final int MAX_RESULTS = 3;
     /** Minimum length of a word to be persisted to the personal dictionary. */
@@ -50,10 +52,20 @@ final class SuggestionEngine {
     private final SharedPreferences prefs;
     /** In-memory mirror of the persisted frequency map. */
     private final HashMap<String, Integer> freq = new HashMap<>();
+    /**
+     * In-memory bigram model: prev → (next → count). Built up as the user
+     * types so "next word" predictions reflect actual usage rather than just
+     * a static curated table. Learned at every word boundary (space / punct
+     * / Enter) by {@link #learnBigram(String, String)}.
+     */
+    private final HashMap<String, HashMap<String, Integer>> bigrams = new HashMap<>();
+    /** Last word that was learned — used to chain into the next bigram. */
+    private String lastLearnedWord = null;
 
     SuggestionEngine(SharedPreferences prefs) {
         this.prefs = prefs;
         load();
+        loadBigrams();
     }
 
     private static final Map<String, String[]> PREDICTIONS = new HashMap<>();
@@ -67,6 +79,23 @@ final class SuggestionEngine {
         PREDICTIONS.put("what",new String[]{"is", "are", "do"});
         PREDICTIONS.put("thank",new String[]{"you", "for"});
         PREDICTIONS.put("please",new String[]{"let", "find", "check"});
+        PREDICTIONS.put("can", new String[]{"you", "I", "we"});
+        PREDICTIONS.put("will",new String[]{"be", "you", "not"});
+        PREDICTIONS.put("the", new String[]{"same", "first", "last"});
+        PREDICTIONS.put("a",   new String[]{"new", "good", "few"});
+        PREDICTIONS.put("of",  new String[]{"the", "course", "this"});
+        PREDICTIONS.put("to",  new String[]{"be", "the", "do"});
+        PREDICTIONS.put("in",  new String[]{"the", "a", "this"});
+        PREDICTIONS.put("on",  new String[]{"the", "my", "this"});
+        PREDICTIONS.put("at",  new String[]{"the", "home", "least"});
+        PREDICTIONS.put("is",  new String[]{"the", "a", "not"});
+        PREDICTIONS.put("was", new String[]{"a", "the", "not"});
+        PREDICTIONS.put("we",  new String[]{"are", "have", "can"});
+        PREDICTIONS.put("they",new String[]{"are", "have", "will"});
+        PREDICTIONS.put("good",new String[]{"morning", "evening", "night"});
+        PREDICTIONS.put("let", new String[]{"me", "us", "you"});
+        PREDICTIONS.put("see", new String[]{"you", "the", "if"});
+        PREDICTIONS.put("got", new String[]{"it", "the", "to"});
 
         // Coding
         PREDICTIONS.put("if",     new String[]{"(", "true", "condition"});
@@ -78,16 +107,54 @@ final class SuggestionEngine {
         PREDICTIONS.put("for",    new String[]{"(int", "item", "i"});
         PREDICTIONS.put("import", new String[]{"java", "android", "static"});
         PREDICTIONS.put("new",    new String[]{"String", "ArrayList", "HashMap"});
+        PREDICTIONS.put("return", new String[]{"true", "false", "null"});
+        PREDICTIONS.put("else",   new String[]{"if", "{", "return"});
+        PREDICTIONS.put("const",  new String[]{"int", "char", "auto"});
+        PREDICTIONS.put("let",    new String[]{"x", "y", "value"});
         PREDICTIONS.put("System.out.println", new String[]{"(", "\"\""});
     }
 
-    /** Returns suggestions for the next word based on the previous word. */
+    /**
+     * Returns up to {@link #MAX_RESULTS} candidates for the word that should
+     * follow {@code prev}. Combines two sources, with learned bigrams
+     * winning over the curated table when they disagree:
+     *
+     * <ol>
+     *   <li>Personal bigram model — what the user has actually typed after
+     *       {@code prev} before, ranked by frequency. This is what makes
+     *       suggestions feel "professional" — they reflect the user's own
+     *       phrasing instead of generic boilerplate.</li>
+     *   <li>Curated {@link #PREDICTIONS} fallback for cold-start cases
+     *       where the user hasn't yet typed enough for the bigram model
+     *       to have any signal.</li>
+     * </ol>
+     */
     List<String> computeNextWord(String prev) {
         if (TextUtils.isEmpty(prev)) return Collections.emptyList();
         String lower = prev.toLowerCase();
+        ArrayList<String> out = new ArrayList<>();
+
+        // 1. Personal bigram model — sort by frequency, surface top entries.
+        HashMap<String, Integer> followers = bigrams.get(lower);
+        if (followers != null && !followers.isEmpty()) {
+            ArrayList<Map.Entry<String, Integer>> entries = new ArrayList<>(followers.entrySet());
+            Collections.sort(entries, (a, b) -> Integer.compare(b.getValue(), a.getValue()));
+            for (Map.Entry<String, Integer> e : entries) {
+                if (out.size() >= MAX_RESULTS) break;
+                if (!out.contains(e.getKey())) out.add(e.getKey());
+            }
+        }
+
+        // 2. Curated table — fill remaining slots with the static suggestions
+        //    so cold-start typing still produces meaningful predictions.
         String[] preds = PREDICTIONS.get(lower);
-        if (preds == null) return Collections.emptyList();
-        return Arrays.asList(preds);
+        if (preds != null) {
+            for (String p : preds) {
+                if (out.size() >= MAX_RESULTS) break;
+                if (!out.contains(p)) out.add(p);
+            }
+        }
+        return out;
     }
 
     /** Builds the ranked candidate list for the given prefix. */
@@ -181,7 +248,9 @@ final class SuggestionEngine {
         return out;
     }
 
-    /** Records that the user accepted / typed {@code word}. Rank-only signal. */
+    /** Records that the user accepted / typed {@code word}. Rank-only signal.
+     *  Also chains into the bigram model so {@code lastLearnedWord → word}
+     *  becomes a future next-word prediction. */
     void learn(String word) {
         if (TextUtils.isEmpty(word) || word.length() < MIN_LEARN_LEN) return;
         // Only learn alphabetic words — punctuation, numbers, and mixed-symbol
@@ -193,6 +262,36 @@ final class SuggestionEngine {
         Integer cur = freq.get(key);
         freq.put(key, (cur == null ? 0 : cur) + 1);
         save();
+
+        // Chain bigram: previous word → this word. Keeps the model tight to
+        // the actual phrase the user is typing right now.
+        if (lastLearnedWord != null) {
+            learnBigram(lastLearnedWord, key);
+        }
+        lastLearnedWord = key;
+    }
+
+    /** Resets the bigram context so the next {@link #learn(String)} call
+     *  starts a fresh chain. Call after sentence-ending punctuation
+     *  (period, question, exclamation) or paragraph breaks so bigrams
+     *  don't span unrelated sentences. */
+    void resetBigramContext() {
+        lastLearnedWord = null;
+    }
+
+    /** Increments the count for {@code prev → next} in the bigram map and
+     *  persists it. Both arguments are expected to already be lower-cased
+     *  alphabetic word keys (mirrors {@link #freq}). */
+    private void learnBigram(String prev, String next) {
+        if (TextUtils.isEmpty(prev) || TextUtils.isEmpty(next)) return;
+        HashMap<String, Integer> followers = bigrams.get(prev);
+        if (followers == null) {
+            followers = new HashMap<>();
+            bigrams.put(prev, followers);
+        }
+        Integer cur = followers.get(next);
+        followers.put(next, (cur == null ? 0 : cur) + 1);
+        saveBigrams();
     }
 
     private static boolean isAllUpper(String s) {
@@ -241,6 +340,47 @@ final class SuggestionEngine {
             sb.append(entries.get(i).getKey()).append('\u0001').append(entries.get(i).getValue());
         }
         prefs.edit().putString(PREFS_KEY, sb.toString()).apply();
+    }
+
+    /**
+     * Bigram persistence format:
+     *   prev\u0001next\u0001count\u0002prev\u0001next\u0001count...
+     * Mirrors the {@link #save()} layout but with three fields per record.
+     */
+    private void loadBigrams() {
+        String raw = prefs.getString(BIGRAM_KEY, "");
+        if (TextUtils.isEmpty(raw)) return;
+        for (String triple : raw.split("\u0002")) {
+            String[] parts = triple.split("\u0001");
+            if (parts.length != 3) continue;
+            try {
+                int count = Integer.parseInt(parts[2]);
+                HashMap<String, Integer> followers = bigrams.get(parts[0]);
+                if (followers == null) {
+                    followers = new HashMap<>();
+                    bigrams.put(parts[0], followers);
+                }
+                followers.put(parts[1], count);
+            } catch (NumberFormatException ignored) { /* skip */ }
+        }
+    }
+
+    private void saveBigrams() {
+        // Cap to top 512 (prev,next) pairs by frequency so the blob stays small.
+        ArrayList<String[]> flat = new ArrayList<>();
+        for (Map.Entry<String, HashMap<String, Integer>> outer : bigrams.entrySet()) {
+            for (Map.Entry<String, Integer> inner : outer.getValue().entrySet()) {
+                flat.add(new String[]{outer.getKey(), inner.getKey(), Integer.toString(inner.getValue())});
+            }
+        }
+        Collections.sort(flat, (a, b) -> Integer.compare(Integer.parseInt(b[2]), Integer.parseInt(a[2])));
+        if (flat.size() > 512) flat = new ArrayList<>(flat.subList(0, 512));
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < flat.size(); i++) {
+            if (i > 0) sb.append('\u0002');
+            sb.append(flat.get(i)[0]).append('\u0001').append(flat.get(i)[1]).append('\u0001').append(flat.get(i)[2]);
+        }
+        prefs.edit().putString(BIGRAM_KEY, sb.toString()).apply();
     }
 
     /** Tiny, intentionally-small autocorrect map. */
