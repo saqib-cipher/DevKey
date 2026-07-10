@@ -10,7 +10,7 @@ buildscript {
     dependencies {
         // AGP 8.x requires JDK 17. Pinned to a stable line so layout editor
         // and the standard Android Studio toolchain stay in sync.
-        classpath 'com.android.tools.build:gradle:8.1.4'
+        classpath 'com.android.tools.build:gradle:8.7.3'
     }
 }
 

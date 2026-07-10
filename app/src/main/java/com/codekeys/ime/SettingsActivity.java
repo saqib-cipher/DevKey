@@ -86,19 +86,37 @@ public class SettingsActivity extends AppCompatActivity {
 
     // Cached views from the inflated XML.
     private ScrollView root;
-    private LinearLayout preferencesContainer;
     private LinearLayout themesContainer;
     private LinearLayout customThemeContainer;
     private LinearLayout langButtonsRow;
     private LinearLayout customLangList;
-    private LinearLayout snippetRefBox;
-    private LinearLayout enableCard;
+    private com.google.android.material.card.MaterialCardView enableCard;
     private View titleSwatch;
     private TextView title, subtitle, footer;
     private Button btnEnableIme, btnPickIme, btnAddLang, btnReset;
     private Button btnInfo, btnExport, btnImport, btnClearPreview;
     private EditText editNewLang, editPreview;
-    private LinearLayout previewCard, backupCard;
+    private com.google.android.material.card.MaterialCardView previewCard, backupCard;
+
+    // Material 3 Switches & Sliders
+    private com.google.android.material.materialswitch.MaterialSwitch switchHaptic, switchKeySound, switchAutoClose, switchShowSuggestions, switchOnlineSuggestions;
+    private com.google.android.material.materialswitch.MaterialSwitch switchShowPcKeys, switchGboardStyleRow, switchDark;
+    private com.google.android.material.slider.Slider sliderKeySoundVolume, sliderKeyboardHeight, sliderKeyRadius, sliderKeyTextSize, sliderKeyStrokeWidth, sliderBgImageOpacity;
+
+    // Custom Theme Card Views
+    private com.google.android.material.card.MaterialCardView customThemeCard;
+    private LinearLayout skeletonPreviewPlaceholder;
+    private LinearLayout colorRowBg, colorRowKey, colorRowText, colorRowAccent, colorRowStroke;
+    private View swatchBg, swatchKey, swatchText, swatchAccent, swatchStroke;
+    private TextView textBgHex, textKeyHex, textTextHex, textAccentHex, textStrokeHex;
+
+    // Background Mode Buttons & Settings Layouts
+    private Button btnModeSolid, btnModeGradient, btnModeImage;
+    private LinearLayout layoutBgGradientSettings, layoutBgImageSettings;
+    private LinearLayout colorRowGradientStart, colorRowGradientEnd;
+    private View swatchGradientStart, swatchGradientEnd;
+    private TextView textGradientStartHex, textGradientEndHex;
+    private Button btnPickBgImage, btnClearBgImage;
 
     // ── Theme palette: { bgColor, keyColor, textColor, accentColor } ──────────
     private static final int[][] THEMES = {
@@ -139,11 +157,11 @@ public class SettingsActivity extends AppCompatActivity {
         bindViews();
         applyTheme();
         wireListeners();
-        renderPreferences();
+        boolean customSelected = "custom".equals(prefs.getString("theme_kind", "preset"));
+        renderCustomThemePanel(customSelected);
         renderThemes();
         renderLanguages();
         renderCustomLanguages();
-        renderSnippetReference();
 
         // Smooth fade-in on launch — gives the activity a polished entry
         // instead of popping into place. Cheap (single ViewPropertyAnimator)
@@ -153,6 +171,7 @@ public class SettingsActivity extends AppCompatActivity {
             root.setAlpha(0f);
             root.animate().alpha(1f).setDuration(280L).start();
         }
+        androidx.activity.EdgeToEdge.enable(this);
     }
 
     /**
@@ -165,11 +184,10 @@ public class SettingsActivity extends AppCompatActivity {
      */
     private void applyThemeAndRerender() {
         applyTheme();
-        renderPreferences();
+        renderCustomThemePanel("custom".equals(prefs.getString("theme_kind", "preset")));
         renderThemes();
         renderLanguages();
         renderCustomLanguages();
-        renderSnippetReference();
     }
 
     /** Themes/names/dark flags loaded from assets/themes.json (else hardcoded fallback). */
@@ -198,13 +216,11 @@ public class SettingsActivity extends AppCompatActivity {
     // ─── View binding ─────────────────────────────────────────────────────────
     private void bindViews() {
         root                 = findViewById(R.id.settings_scroll);
-        preferencesContainer = findViewById(R.id.preferences_container);
         themesContainer      = findViewById(R.id.themes_container);
         customThemeContainer = findViewById(R.id.custom_theme_container);
         langButtonsRow       = findViewById(R.id.lang_buttons_row);
         customLangList       = findViewById(R.id.custom_lang_list);
-        snippetRefBox        = findViewById(R.id.snippet_ref_box);
-        enableCard           = findViewById(R.id.enable_card);
+        enableCard           = (com.google.android.material.card.MaterialCardView) findViewById(R.id.enable_card);
         titleSwatch          = findViewById(R.id.title_swatch);
         title                = findViewById(R.id.title);
         subtitle             = findViewById(R.id.subtitle);
@@ -219,8 +235,91 @@ public class SettingsActivity extends AppCompatActivity {
         btnImport            = findViewById(R.id.btn_import);
         btnClearPreview      = findViewById(R.id.btn_clear_preview);
         editPreview          = findViewById(R.id.edit_preview);
-        previewCard          = findViewById(R.id.preview_card);
-        backupCard           = findViewById(R.id.backup_card);
+        previewCard          = (com.google.android.material.card.MaterialCardView) findViewById(R.id.preview_card);
+        backupCard           = (com.google.android.material.card.MaterialCardView) findViewById(R.id.backup_card);
+
+        // Bind new Material 3 components
+        switchHaptic = findViewById(R.id.switch_haptic);
+        switchKeySound = findViewById(R.id.switch_key_sound);
+        switchAutoClose = findViewById(R.id.switch_auto_close);
+        switchShowSuggestions = findViewById(R.id.switch_show_suggestions);
+        switchOnlineSuggestions = findViewById(R.id.switch_online_suggestions);
+        switchShowPcKeys = findViewById(R.id.switch_show_pc_keys);
+        switchGboardStyleRow = findViewById(R.id.switch_gboard_style_row);
+        switchDark = findViewById(R.id.switch_dark);
+
+        sliderKeySoundVolume = findViewById(R.id.slider_key_sound_volume);
+        sliderKeyboardHeight = findViewById(R.id.slider_keyboard_height);
+        sliderKeyRadius = findViewById(R.id.slider_key_radius);
+        sliderKeyTextSize = findViewById(R.id.slider_key_text_size);
+        sliderKeyStrokeWidth = findViewById(R.id.slider_key_stroke_width);
+        sliderBgImageOpacity = findViewById(R.id.slider_bg_image_opacity);
+
+        customThemeCard      = (com.google.android.material.card.MaterialCardView) findViewById(R.id.custom_theme_card);
+        skeletonPreviewPlaceholder = findViewById(R.id.skeleton_preview_placeholder);
+
+        colorRowBg = findViewById(R.id.color_row_bg);
+        colorRowKey = findViewById(R.id.color_row_key);
+        colorRowText = findViewById(R.id.color_row_text);
+        colorRowAccent = findViewById(R.id.color_row_accent);
+        colorRowStroke = findViewById(R.id.color_row_stroke);
+
+        swatchBg = findViewById(R.id.swatch_bg);
+        swatchKey = findViewById(R.id.swatch_key);
+        swatchText = findViewById(R.id.swatch_text);
+        swatchAccent = findViewById(R.id.swatch_accent);
+        swatchStroke = findViewById(R.id.swatch_stroke);
+
+        textBgHex = findViewById(R.id.text_bg_hex);
+        textKeyHex = findViewById(R.id.text_key_hex);
+        textTextHex = findViewById(R.id.text_text_hex);
+        textAccentHex = findViewById(R.id.text_accent_hex);
+        textStrokeHex = findViewById(R.id.text_stroke_hex);
+
+        btnModeSolid = findViewById(R.id.btn_mode_solid);
+        btnModeGradient = findViewById(R.id.btn_mode_gradient);
+        btnModeImage = findViewById(R.id.btn_mode_image);
+
+        layoutBgGradientSettings = findViewById(R.id.layout_bg_gradient_settings);
+        layoutBgImageSettings = findViewById(R.id.layout_bg_image_settings);
+
+        colorRowGradientStart = findViewById(R.id.color_row_gradient_start);
+        colorRowGradientEnd = findViewById(R.id.color_row_gradient_end);
+
+        swatchGradientStart = findViewById(R.id.swatch_gradient_start);
+        swatchGradientEnd = findViewById(R.id.swatch_gradient_end);
+
+        textGradientStartHex = findViewById(R.id.text_gradient_start_hex);
+        textGradientEndHex = findViewById(R.id.text_gradient_end_hex);
+
+        btnPickBgImage = findViewById(R.id.btn_pick_bg_image);
+        btnClearBgImage = findViewById(R.id.btn_clear_bg_image);
+    }
+
+    private void setupSwitch(com.google.android.material.materialswitch.MaterialSwitch sw, String key, boolean def) {
+        if (sw == null) return;
+        sw.setChecked(prefs.getBoolean(key, def));
+        sw.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            prefs.edit().putBoolean(key, isChecked).apply();
+            if ("show_pc_keys".equals(key) || "gboard_style_row".equals(key) || "dark".equals(key) || "show_suggestions".equals(key)) {
+                applyThemeAndRerender();
+            }
+        });
+    }
+
+    private void setupSlider(com.google.android.material.slider.Slider slider, String key, int def) {
+        if (slider == null) return;
+        slider.setValue(prefs.getInt(key, def));
+        slider.addOnChangeListener((s, value, fromUser) -> {
+            if (fromUser) {
+                prefs.edit().putInt(key, (int) value).apply();
+                renderCustomThemePanel(true);
+            }
+        });
+    }
+
+    private void pickColor(String title, String key, View swatch, TextView hexText) {
+        showColorPickerDialog(title, key);
     }
 
     private void wireListeners() {
@@ -238,9 +337,6 @@ public class SettingsActivity extends AppCompatActivity {
         btnReset.setOnClickListener(v -> {
             prefs.edit().clear().apply();
             Toast.makeText(this, "Settings reset.", Toast.LENGTH_SHORT).show();
-            // Reset is a wholesale wipe (incl. seeded defaults), so a full
-            // recreate() is fine here — the user expects to be returned to
-            // a fresh state and nothing useful needs preserving.
             recreate();
         });
 
@@ -250,6 +346,55 @@ public class SettingsActivity extends AppCompatActivity {
         if (btnClearPreview != null) btnClearPreview.setOnClickListener(v -> {
             if (editPreview != null) editPreview.setText("");
         });
+
+        // Setup switches
+        setupSwitch(switchHaptic, "haptic", true);
+        setupSwitch(switchKeySound, "key_sound", false);
+        setupSwitch(switchAutoClose, "auto_close", true);
+        setupSwitch(switchShowSuggestions, "show_suggestions", true);
+        setupSwitch(switchOnlineSuggestions, "online_suggestions", false);
+        setupSwitch(switchShowPcKeys, "show_pc_keys", false);
+        setupSwitch(switchGboardStyleRow, "gboard_style_row", false);
+        setupSwitch(switchDark, "dark", true);
+
+        // Setup sliders
+        setupSlider(sliderKeySoundVolume, "key_sound_volume", 50);
+        setupSlider(sliderKeyboardHeight, "keyboard_height_pct", 100);
+        setupSlider(sliderKeyRadius, "key_radius_dp", 12);
+        setupSlider(sliderKeyTextSize, "key_text_size_sp", 14);
+        setupSlider(sliderKeyStrokeWidth, "key_stroke_width_dp", 0);
+        setupSlider(sliderBgImageOpacity, PREF_BG_IMAGE_OPACITY, 70);
+
+        // Setup custom theme colors click events
+        if (colorRowBg != null) colorRowBg.setOnClickListener(v -> pickColor("Keyboard Background", "bg_color", swatchBg, textBgHex));
+        if (colorRowKey != null) colorRowKey.setOnClickListener(v -> pickColor("Key Surface Color", "key_color", swatchKey, textKeyHex));
+        if (colorRowText != null) colorRowText.setOnClickListener(v -> pickColor("Text Color", "text_color", swatchText, textTextHex));
+        if (colorRowAccent != null) colorRowAccent.setOnClickListener(v -> pickColor("Accent Color", "accent_color", swatchAccent, textAccentHex));
+        if (colorRowStroke != null) colorRowStroke.setOnClickListener(v -> pickColor("Key Border Stroke Color", "key_stroke_color", swatchStroke, textStrokeHex));
+
+        if (colorRowGradientStart != null) colorRowGradientStart.setOnClickListener(v -> pickColor("Gradient Top Color", "kb_bg_gradient_start", swatchGradientStart, textGradientStartHex));
+        if (colorRowGradientEnd != null) colorRowGradientEnd.setOnClickListener(v -> pickColor("Gradient Bottom Color", "kb_bg_gradient_end", swatchGradientEnd, textGradientEndHex));
+
+        // Background Mode button clicks
+        if (btnModeSolid != null) btnModeSolid.setOnClickListener(v -> {
+            prefs.edit().putString("kb_bg_mode", "solid").apply();
+            renderCustomThemePanel(true);
+        });
+        if (btnModeGradient != null) btnModeGradient.setOnClickListener(v -> {
+            prefs.edit().putString("kb_bg_mode", "gradient").apply();
+            renderCustomThemePanel(true);
+        });
+        if (btnModeImage != null) btnModeImage.setOnClickListener(v -> {
+            prefs.edit().putString("kb_bg_mode", "image").apply();
+            renderCustomThemePanel(true);
+        });
+
+        // Background image pick/clear buttons
+        if (btnPickBgImage != null) btnPickBgImage.setOnClickListener(v -> launchBackgroundImagePicker());
+        if (btnClearBgImage != null) btnClearBgImage.setOnClickListener(v -> {
+            prefs.edit().remove(PREF_BG_IMAGE_URI).apply();
+            renderCustomThemePanel(true);
+        });
     }
 
     /** Applies the user's selected theme to the static layout views. */
@@ -258,79 +403,15 @@ public class SettingsActivity extends AppCompatActivity {
         int accent = prefs.getInt("accent_color", 0xFF00E5FF);
         int textCol = prefs.getInt("text_color",  0xFFE8E8FF);
 
-        // Page surface — slightly darker than the user's bg colour so the
-        // rounded card surfaces (which use bg) read as elevated panels.
         int pageBg = blend(bg, 0xFF000000, 0.18f);
         root.setBackgroundColor(pageBg);
         ((View) root.getChildAt(0)).setBackgroundColor(pageBg);
-        titleSwatch.setBackground(themedRoundedFill(accent, accent, dp(3), 0));
+        titleSwatch.setBackgroundColor(accent);
         title.setTextColor(textCol);
         subtitle.setTextColor(dim(textCol));
         footer.setTextColor(dim(textCol));
 
-        // Card surfaces — same rounded shape, themed fill + low-alpha border.
-        int cardFill = blend(bg, 0xFFFFFFFF, 0.05f);
-        int cardStroke = blend(textCol, 0x00000000, 0.85f) | 0x1F000000;
-        int cardRadius = dp(18);
-        int cardStrokeW = dp(1);
-
-        enableCard.setBackground(themedRoundedFill(cardFill, cardStroke, cardRadius, cardStrokeW));
-        snippetRefBox.setBackground(themedRoundedFill(cardFill, cardStroke, cardRadius, cardStrokeW));
-        if (previewCard != null) previewCard.setBackground(themedRoundedFill(cardFill, cardStroke, cardRadius, cardStrokeW));
-        if (backupCard != null) backupCard.setBackground(themedRoundedFill(cardFill, cardStroke, cardRadius, cardStrokeW));
-        if (preferencesContainer != null) preferencesContainer.setBackground(themedRoundedFill(cardFill, cardStroke, cardRadius, cardStrokeW));
-        // Custom-language card and custom-theme container use the same surface.
-        View customLangCard = findViewById(R.id.custom_lang_card);
-        if (customLangCard != null) customLangCard.setBackground(themedRoundedFill(cardFill, cardStroke, cardRadius, cardStrokeW));
-        if (customThemeContainer != null) customThemeContainer.setBackground(themedRoundedFill(cardFill, cardStroke, cardRadius, cardStrokeW));
-
-        // Primary CTAs — accent-tinted rounded fill.
-        int btnPrimaryRadius = dp(12);
-        int primaryFill = blend(bg, accent, 0.18f);
-        int primaryStroke = blend(accent, 0x00000000, 0.7f) | 0x4D000000;
-        btnEnableIme.setBackground(themedRoundedFill(primaryFill, primaryStroke, btnPrimaryRadius, cardStrokeW));
-        btnEnableIme.setTextColor(accent);
-        btnPickIme.setBackground(themedRoundedFill(blend(bg, 0xFFFFFFFF, 0.07f), cardStroke, btnPrimaryRadius, cardStrokeW));
-        btnPickIme.setTextColor(textCol);
-
-        if (editPreview != null) {
-            editPreview.setTextColor(textCol);
-            editPreview.setHintTextColor(dim(textCol));
-            editPreview.setBackground(themedRoundedFill(blend(bg, 0xFF000000, 0.30f), cardStroke, dp(10), cardStrokeW));
-        }
-        if (btnClearPreview != null) {
-            btnClearPreview.setTextColor(dim(textCol));
-            btnClearPreview.setBackground(themedRoundedFill(blend(bg, 0xFF000000, 0.30f), cardStroke, btnPrimaryRadius, cardStrokeW));
-        }
-        if (btnInfo != null) {
-            btnInfo.setTextColor(accent);
-            btnInfo.setBackground(themedRoundedFill(blend(bg, accent, 0.18f), primaryStroke, btnPrimaryRadius, cardStrokeW));
-        }
-        if (btnExport != null) {
-            btnExport.setTextColor(accent);
-            btnExport.setBackground(themedRoundedFill(primaryFill, primaryStroke, btnPrimaryRadius, cardStrokeW));
-        }
-        if (btnImport != null) {
-            btnImport.setTextColor(textCol);
-            btnImport.setBackground(themedRoundedFill(blend(bg, 0xFFFFFFFF, 0.07f), cardStroke, btnPrimaryRadius, cardStrokeW));
-        }
-        // Add language entry button picks up the same primary surface.
-        Button btnAddLangLocal = findViewById(R.id.btn_add_lang);
-        EditText editNewLangLocal = findViewById(R.id.edit_new_lang);
-        if (btnAddLangLocal != null) {
-            btnAddLangLocal.setTextColor(accent);
-            btnAddLangLocal.setBackground(themedRoundedFill(primaryFill, primaryStroke, btnPrimaryRadius, cardStrokeW));
-        }
-        if (editNewLangLocal != null) {
-            editNewLangLocal.setTextColor(textCol);
-            editNewLangLocal.setHintTextColor(dim(textCol));
-            editNewLangLocal.setBackground(themedRoundedFill(blend(bg, 0xFF000000, 0.30f), cardStroke, dp(10), cardStrokeW));
-        }
-        // Reset button — destructive, red-tinted rounded fill.
-        if (btnReset != null) {
-            btnReset.setTextColor(0xFFFF8888);
-            btnReset.setBackground(themedRoundedFill(0x33FF3344, 0x55FF6666, btnPrimaryRadius, cardStrokeW));
-        }
+        updateColorSwatches();
     }
 
     // ─── Info / help ──────────────────────────────────────────────────────────
@@ -898,192 +979,68 @@ public class SettingsActivity extends AppCompatActivity {
         }
     }
 
-    // ─── Preferences (toggles) ────────────────────────────────────────────────
-    private void renderPreferences() {
-        preferencesContainer.removeAllViews();
+    private void updateColorSwatches() {
+        int bg = prefs.getInt("bg_color", 0xFF1A1A2E);
+        int keyCol = prefs.getInt("key_color", 0xFF252545);
         int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
-        int bg      = prefs.getInt("bg_color",   0xFF1A1A2E);
-        int accent  = prefs.getInt("accent_color", 0xFF00E5FF);
+        int accent = prefs.getInt("accent_color", 0xFF00E5FF);
+        int strokeCol = prefs.getInt("key_stroke_color", 0x00000000);
+        int gradStart = prefs.getInt("kb_bg_gradient_start", bg);
+        int gradEnd = prefs.getInt("kb_bg_gradient_end", blend(bg, 0xFF000000, 0.30f));
 
-        preferencesContainer.addView(buildToggle("Haptic Feedback",
-                "Vibrate on each key press",
-                "haptic", true, textCol, bg, accent));
+        if (swatchBg != null) swatchBg.setBackgroundColor(bg);
+        if (textBgHex != null) textBgHex.setText("#" + String.format("%08X", bg));
 
-        preferencesContainer.addView(buildToggle("Dark Mode",
-                "Use dark keyboard background",
-                "dark", true, textCol, bg, accent));
+        if (swatchKey != null) swatchKey.setBackgroundColor(keyCol);
+        if (textKeyHex != null) textKeyHex.setText("#" + String.format("%08X", keyCol));
 
-        preferencesContainer.addView(buildToggle("AMOLED Mode",
-                "Pure black background (saves battery on OLED screens)",
-                "amoled", false, textCol, bg, accent));
+        if (swatchText != null) swatchText.setBackgroundColor(textCol);
+        if (textTextHex != null) textTextHex.setText("#" + String.format("%08X", textCol));
 
-        preferencesContainer.addView(buildToggle("Auto-close Brackets",
-                "Type ( → inserts ()  |  Type { → inserts {}  |  Type [ → inserts []",
-                "auto_close", true, textCol, bg, accent));
+        if (swatchAccent != null) swatchAccent.setBackgroundColor(accent);
+        if (textAccentHex != null) textAccentHex.setText("#" + String.format("%08X", accent));
 
-        preferencesContainer.addView(buildToggle("Show Suggestions",
-                "Display autocomplete and correction strip on top",
-                "show_suggestions", true, textCol, bg, accent));
-
-        preferencesContainer.addView(buildToggle("Key Sound",
-                "Play system click sound on each key press",
-                "key_sound", false, textCol, bg, accent));
-
-        preferencesContainer.addView(buildToggle("Show PC Keys Row",
-                "Adds Esc, Tab, Ctrl, Alt, Shift, Win, F1–F12, Home/End/PgUp/PgDn",
-                "show_pc_keys", false, textCol, bg, accent));
-
-        // Gboard-style bottom row: ?123 | , | space | . | enter — replaces
-        // the settings icon and the four-arrow cluster with a comma key on
-        // the left of space and a period key on the right. Cursor control
-        // moves into a dedicated panel reachable from a single button (see
-        // "Cursor Panel" in the keyboard).
-        preferencesContainer.addView(buildToggle("Gboard-Style Bottom Row",
-                "Use comma & period keys around space, like Gboard. Hides the settings icon and arrow cluster — cursor control moves into a dedicated panel.",
-                "gboard_style_row", false, textCol, bg, accent));
-
-        // Online suggestion source: when enabled, the suggestion engine
-        // queries Google's public suggest endpoint to enrich the local
-        // dictionary. Default off so the IME stays offline-by-default
-        // (Sketchware-Pro friendly) and never phones home without consent.
-        preferencesContainer.addView(buildToggle("Online Suggestions",
-                "Fetch additional suggestions from the internet (Google suggest). Requires network. Off keeps the keyboard fully offline.",
-                "online_suggestions", false, textCol, bg, accent));
-
-        preferencesContainer.addView(buildKeyboardHeightSelector(textCol, bg, accent));
-        preferencesContainer.addView(buildKeySoundVolumeSelector(textCol, bg, accent));
-
-        // Appearance (key shape, size, border, colours) and the keyboard
-        // Background Mode (solid/gradient/image) all live inside the Custom
-        // theme panel — see renderCustomThemePanel — so the user has a single
-        // place to tune their personal look with a real-time preview.
-    }
-
-    private TextView buildSectionHeader(String label, int textCol) {
-        TextView tv = new TextView(this);
-        tv.setText(label);
-        tv.setTextSize(11f);
-        tv.setTextColor(textCol);
-        tv.setTypeface(Typeface.DEFAULT_BOLD);
-        tv.setPadding(dp(4), dp(14), dp(4), dp(6));
-        return tv;
-    }
-
-    /**
-     * Generic preset-button selector for an integer preference. Each option
-     * shows the int value as its label; whichever is currently active gets
-     * the accent highlight.
-     */
-    private View buildIntStepSelector(String label, String desc, final String key,
-                                      final int def, final int[] values,
-                                      int textCol, int bg, int accent) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
-        card.setPadding(dp(16), dp(12), dp(16), dp(14));
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        clp.setMargins(0, dp(2), 0, dp(2));
-        card.setLayoutParams(clp);
-
-        TextView lv = new TextView(this);
-        lv.setText(label);
-        lv.setTextSize(15f);
-        lv.setTextColor(textCol);
-        card.addView(lv);
-
-        TextView dv = new TextView(this);
-        dv.setText(desc);
-        dv.setTextSize(11f);
-        dv.setTextColor(dim(textCol));
-        dv.setPadding(0, 0, 0, dp(8));
-        card.addView(dv);
-
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-
-        int current = prefs.getInt(key, def);
-        for (final int v : values) {
-            boolean sel = current == v;
-            Button b = new Button(this);
-            b.setText(String.valueOf(v));
-            b.setAllCaps(false);
-            b.setTextSize(12f);
-            b.setTextColor(sel ? accent : textCol);
-            b.setBackgroundColor(sel ? blend(bg, accent, 0.22f) : blend(bg, 0xFFFFFFFF, 0.05f));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
-            lp.setMargins(2, 0, 2, 0);
-            b.setLayoutParams(lp);
-            b.setOnClickListener(view -> {
-                prefs.edit().putInt(key, v).apply();
-                // Both panels host int-step selectors today; rebuild whichever
-                // is showing so the highlighted button + preview track the new
-                // value without a flash of stale UI.
-                renderCustomThemePanel(true);
-                renderPreferences();
-            });
-            row.addView(b);
+        if (swatchStroke != null) {
+            if ((strokeCol >>> 24) == 0) {
+                swatchStroke.setBackgroundColor(0x00000000);
+                textStrokeHex.setText("None");
+            } else {
+                swatchStroke.setBackgroundColor(strokeCol);
+                textStrokeHex.setText("#" + String.format("%08X", strokeCol));
+            }
         }
-        card.addView(row);
-        return card;
+
+        if (swatchGradientStart != null) swatchGradientStart.setBackgroundColor(gradStart);
+        if (textGradientStartHex != null) textGradientStartHex.setText("#" + String.format("%08X", gradStart));
+
+        if (swatchGradientEnd != null) swatchGradientEnd.setBackgroundColor(gradEnd);
+        if (textGradientEndHex != null) textGradientEndHex.setText("#" + String.format("%08X", gradEnd));
     }
 
-    /**
-     * Three-button selector for the keyboard background mode (solid / gradient
-     * / image). Re-renders the section so the mode-specific sub-controls
-     * appear / disappear immediately.
-     */
-    private View buildBackgroundModeSelector(int textCol, int bg, int accent) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
-        card.setPadding(dp(16), dp(12), dp(16), dp(14));
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        clp.setMargins(0, dp(2), 0, dp(2));
-        card.setLayoutParams(clp);
+    private void updateBackgroundModeButtons(String mode) {
+        if (btnModeSolid == null || btnModeGradient == null || btnModeImage == null) return;
 
-        TextView lv = new TextView(this);
-        lv.setText("Background Mode");
-        lv.setTextSize(15f);
-        lv.setTextColor(textCol);
-        card.addView(lv);
+        int bg = prefs.getInt("bg_color", 0xFF1A1A2E);
+        int accent = prefs.getInt("accent_color", 0xFF00E5FF);
+        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
 
-        TextView dv = new TextView(this);
-        dv.setText("Solid uses the theme color. Gradient blends two colors. Image lets you pick a wallpaper.");
-        dv.setTextSize(11f);
-        dv.setTextColor(dim(textCol));
-        dv.setPadding(0, 0, 0, dp(8));
-        card.addView(dv);
+        styleModeButton(btnModeSolid, "solid".equals(mode), bg, accent, textCol);
+        styleModeButton(btnModeGradient, "gradient".equals(mode), bg, accent, textCol);
+        styleModeButton(btnModeImage, "image".equals(mode), bg, accent, textCol);
+    }
 
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-
-        final String[] modes = {"solid", "gradient", "image"};
-        final String[] names = {"Solid", "Gradient", "Image"};
-        String current = prefs.getString("kb_bg_mode", "solid");
-        for (int i = 0; i < modes.length; i++) {
-            final String mode = modes[i];
-            boolean sel = mode.equals(current);
-            Button b = new Button(this);
-            b.setText(names[i]);
-            b.setAllCaps(false);
-            b.setTextSize(12f);
-            b.setTextColor(sel ? accent : textCol);
-            b.setBackgroundColor(sel ? blend(bg, accent, 0.22f) : blend(bg, 0xFFFFFFFF, 0.05f));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
-            lp.setMargins(2, 0, 2, 0);
-            b.setLayoutParams(lp);
-            b.setOnClickListener(v -> {
-                prefs.edit().putString("kb_bg_mode", mode).apply();
-                renderCustomThemePanel(true);
-                renderPreferences();
-            });
-            row.addView(b);
+    private void styleModeButton(Button btn, boolean selected, int bg, int accent, int textCol) {
+        if (btn == null) return;
+        if (selected) {
+            btn.setBackgroundColor(blend(bg, accent, 0.25f));
+            btn.setTextColor(accent);
+        } else {
+            btn.setBackgroundColor(0x00000000);
+            btn.setTextColor(textCol);
         }
-        card.addView(row);
-        return card;
     }
+
+
 
     /** Request code for the keyboard background image picker. */
     private static final int REQ_PICK_BG_IMAGE = 1042;
@@ -1119,177 +1076,8 @@ public class SettingsActivity extends AppCompatActivity {
                     .putString(PREF_BG_IMAGE_URI, uri.toString())
                     .putString("kb_bg_mode", "image")
                     .apply();
-            // If the skeleton-preview dialog is open, refresh its thumbnail.
-            if (pendingBgPreviewRefresh != null) pendingBgPreviewRefresh.run();
-            renderPreferences();
+            renderCustomThemePanel(true);
         }
-    }
-
-    /**
-     * Inline "Keyboard Size" selector — four preset buttons writing a float
-     * {@code key_height_scale} preference consumed by the IME service.
-     */
-    private View buildKeyboardHeightSelector(int textCol, int bg, int accent) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
-        card.setPadding(dp(16), dp(12), dp(16), dp(14));
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        clp.setMargins(0, dp(2), 0, dp(2));
-        card.setLayoutParams(clp);
-
-        TextView label = new TextView(this);
-        label.setText("Keyboard Size");
-        label.setTextSize(15f);
-        label.setTextColor(textCol);
-        card.addView(label);
-
-        TextView desc = new TextView(this);
-        desc.setText("Scale the keyboard's row heights — useful on large or small screens.");
-        desc.setTextSize(11f);
-        desc.setTextColor(dim(textCol));
-        desc.setPadding(0, 0, 0, dp(8));
-        card.addView(desc);
-
-        final String[] names    = { "Compact", "Standard", "Comfortable", "Large" };
-        final float[]  scales   = { 0.85f,     1.0f,       1.15f,         1.30f  };
-
-        HorizontalScrollView scroll = new HorizontalScrollView(this);
-        scroll.setHorizontalScrollBarEnabled(false);
-        scroll.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setLayoutParams(new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT));
-
-        float current = prefs.getFloat("key_height_scale", 1.0f);
-        int radius = dp(prefs.getInt("key_radius_dp", 12));
-        int strokeW = dp(prefs.getInt("key_stroke_width_dp", 0));
-        int strokeC = prefs.getInt("key_stroke_color", 0x00000000);
-
-        for (int i = 0; i < names.length; i++) {
-            final float scale = scales[i];
-            boolean sel = Math.abs(current - scale) < 0.01f;
-            Button b = new Button(this);
-            b.setText(names[i]);
-            b.setAllCaps(false);
-            b.setTextSize(12f);
-            b.setTextColor(sel ? accent : textCol);
-            b.setBackground(themedRoundedFill(sel ? blend(bg, accent, 0.22f) : blend(bg, 0xFFFFFFFF, 0.05f), strokeC, radius, strokeW));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(90), dp(40));
-            lp.setMargins(dp(2), 0, dp(2), 0);
-            b.setLayoutParams(lp);
-            b.setOnClickListener(v -> {
-                prefs.edit().putFloat("key_height_scale", scale).apply();
-                renderPreferences();
-            });
-            row.addView(b);
-        }
-        scroll.addView(row);
-        card.addView(scroll);
-        return card;
-    }
-
-    /**
-     * Coarse 5-step volume selector for key-press sounds. Stored as an int
-     * percent {@code key_sound_volume} (0–100). Hidden visually when sound is
-     * off — but still rendered so the user can pre-set their preferred level.
-     */
-    private View buildKeySoundVolumeSelector(int textCol, int bg, int accent) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
-        card.setPadding(dp(16), dp(12), dp(16), dp(14));
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        clp.setMargins(0, dp(2), 0, dp(2));
-        card.setLayoutParams(clp);
-
-        TextView label = new TextView(this);
-        label.setText("Key Sound Volume");
-        label.setTextSize(15f);
-        label.setTextColor(textCol);
-        card.addView(label);
-
-        TextView desc = new TextView(this);
-        desc.setText("Loudness of the click. Has no effect when Key Sound is off.");
-        desc.setTextSize(11f);
-        desc.setTextColor(dim(textCol));
-        desc.setPadding(0, 0, 0, dp(8));
-        card.addView(desc);
-
-        final String[] names = { "Off", "Low", "Med", "High", "Max" };
-        final int[]    vols  = { 0,     25,    50,    75,     100  };
-
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-
-        int current = prefs.getInt("key_sound_volume", 50);
-        for (int i = 0; i < names.length; i++) {
-            final int vol = vols[i];
-            boolean sel = current == vol;
-            Button b = new Button(this);
-            b.setText(names[i]);
-            b.setAllCaps(false);
-            b.setTextSize(12f);
-            b.setTextColor(sel ? accent : textCol);
-            b.setBackgroundColor(sel ? blend(bg, accent, 0.22f) : blend(bg, 0xFFFFFFFF, 0.05f));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
-            lp.setMargins(2, 0, 2, 0);
-            b.setLayoutParams(lp);
-            b.setOnClickListener(v -> {
-                prefs.edit().putInt("key_sound_volume", vol).apply();
-                renderPreferences();
-            });
-            row.addView(b);
-        }
-        card.addView(row);
-        return card;
-    }
-
-    private View buildToggle(String label, String desc, final String key, boolean def,
-                             int textCol, int bg, int accent) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
-        row.setPadding(dp(16), dp(14), dp(16), dp(14));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, 0, 0, dp(2));
-        row.setLayoutParams(lp);
-
-        LinearLayout texts = new LinearLayout(this);
-        texts.setOrientation(LinearLayout.VERTICAL);
-        texts.setLayoutParams(new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-        TextView lv = new TextView(this);
-        lv.setText(label);
-        lv.setTextSize(15f);
-        lv.setTextColor(textCol);
-        texts.addView(lv);
-
-        TextView dv = new TextView(this);
-        dv.setText(desc);
-        dv.setTextSize(11f);
-        dv.setTextColor(dim(textCol));
-        texts.addView(dv);
-
-        Switch sw = new Switch(this);
-        sw.setChecked(prefs.getBoolean(key, def));
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            sw.getThumbDrawable().setTint(accent);
-        }
-        sw.setOnCheckedChangeListener((btn, checked) ->
-                prefs.edit().putBoolean(key, checked).apply());
-
-        row.addView(texts);
-        row.addView(sw);
-        return row;
     }
 
     // ─── Themes ───────────────────────────────────────────────────────────────
@@ -1626,316 +1414,47 @@ public class SettingsActivity extends AppCompatActivity {
 
         card.setOnClickListener(v -> {
             prefs.edit().putString("theme_kind", "custom").apply();
-            renderThemes();
+            applyThemeAndRerender();
         });
         return card;
     }
 
-    /**
-     * Renders the four colour-picker rows (background / key / text / accent)
-     * inside {@link #customThemeContainer}. Only visible when the user has
-     * selected the Custom theme entry — preset selections collapse it.
-     */
     private void renderCustomThemePanel(boolean visible) {
-        if (customThemeContainer == null) return;
-        customThemeContainer.removeAllViews();
-        customThemeContainer.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (customThemeCard == null) return;
+        customThemeCard.setVisibility(visible ? View.VISIBLE : View.GONE);
         if (!visible) return;
 
         int bg = prefs.getInt("bg_color", 0xFF1A1A2E);
         int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
         int accent = prefs.getInt("accent_color", 0xFF00E5FF);
-        int keyCol = prefs.getInt("key_color", 0xFF252545);
 
-        // ── Live preview ─────────────────────────────────────────────────
-        // A skeleton rendering of the keyboard that reads pref values at draw
-        // time — every change below rebuilds this panel so the preview always
-        // reflects the latest state without needing to dismiss settings or
-        // re-open the IME.
-        KeyboardSkeletonPreview preview = new KeyboardSkeletonPreview(this);
-        // Reflect the chosen background image (if any) directly in the preview.
-        String previewImg = prefs.getString(PREF_BG_IMAGE_URI, null);
-        if (!TextUtils.isEmpty(previewImg)) {
-            Bitmap bmp = decodeUriThumbnail(previewImg, dp(220));
-            if (bmp != null) preview.setImage(bmp);
-            preview.setImageOpacity(prefs.getInt(PREF_BG_IMAGE_OPACITY, 70));
+        // Render KeyboardSkeletonPreview
+        if (skeletonPreviewPlaceholder != null) {
+            skeletonPreviewPlaceholder.removeAllViews();
+            KeyboardSkeletonPreview preview = new KeyboardSkeletonPreview(this);
+            String previewImg = prefs.getString(PREF_BG_IMAGE_URI, null);
+            if (!TextUtils.isEmpty(previewImg)) {
+                Bitmap bmp = decodeUriThumbnail(previewImg, dp(220));
+                if (bmp != null) preview.setImage(bmp);
+                preview.setImageOpacity(prefs.getInt(PREF_BG_IMAGE_OPACITY, 70));
+            }
+            LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT);
+            preview.setLayoutParams(plp);
+            skeletonPreviewPlaceholder.addView(preview);
         }
-        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(180));
-        plp.setMargins(dp(2), dp(6), dp(2), dp(8));
-        preview.setLayoutParams(plp);
-        customThemeContainer.addView(preview);
 
-        // Heading hint
-        TextView hint = new TextView(this);
-        hint.setText("Tap a colour to edit. Changes apply live in the preview above.");
-        hint.setTextSize(11f);
-        hint.setTextColor(dim(textCol));
-        hint.setPadding(dp(14), dp(6), dp(14), dp(8));
-        customThemeContainer.addView(hint);
-
-        // ── Colours ──
-        customThemeContainer.addView(buildSectionHeader("Colors", textCol));
-        customThemeContainer.addView(buildColorRow("Background",   "bg_color",     bg));
-        customThemeContainer.addView(buildColorRow("Key surface",  "key_color",    keyCol));
-        customThemeContainer.addView(buildColorRow("Text",         "text_color",   textCol));
-        customThemeContainer.addView(buildColorRow("Accent",       "accent_color", accent));
-
-        // Dark/Light toggle row.
-        Switch sw = new Switch(this);
-        sw.setText("Treat as dark theme");
-        sw.setTextColor(textCol);
-        sw.setChecked(prefs.getBoolean("dark", true));
-        sw.setPadding(dp(14), dp(6), dp(14), dp(6));
-        sw.setOnCheckedChangeListener((b, c) -> {
-            prefs.edit().putBoolean("dark", c).apply();
-            renderCustomThemePanel(true);
-        });
-        customThemeContainer.addView(sw);
-
-        // ── Background ──
-        // Mode chip selector drives this section: solid hides the sub-controls,
-        // gradient reveals two colour rows, image reveals the unified image
-        // picker row (a single source of truth — there used to be a second,
-        // duplicate "Pick image / Clear" card here that confused users).
-        customThemeContainer.addView(buildSectionHeader("Background", textCol));
-        customThemeContainer.addView(buildBackgroundModeSelector(textCol, bg, accent));
+        // Toggle background mode views
         String mode = prefs.getString("kb_bg_mode", "solid");
-        if ("gradient".equals(mode)) {
-            // Use the unified colour picker (rather than the preset-chip
-            // selector) so the user can dial in any colour, including alpha,
-            // without being locked to the old palette.
-            int gradStart = prefs.getInt("kb_bg_gradient_start", bg);
-            int gradEnd   = prefs.getInt("kb_bg_gradient_end",
-                    blend(bg, 0xFF000000, 0.30f));
-            customThemeContainer.addView(
-                    buildColorRow("Gradient top",    "kb_bg_gradient_start", gradStart));
-            customThemeContainer.addView(
-                    buildColorRow("Gradient bottom", "kb_bg_gradient_end",   gradEnd));
-        } else if ("image".equals(mode)) {
-            // Single picker — opens a dialog with skeleton preview + opacity
-            // slider. The previous flow ALSO showed a separate inline pick/clear
-            // card, which split the same controls across two places.
-            customThemeContainer.addView(buildBackgroundImageRow());
+        if (layoutBgGradientSettings != null) {
+            layoutBgGradientSettings.setVisibility("gradient".equals(mode) ? View.VISIBLE : View.GONE);
+        }
+        if (layoutBgImageSettings != null) {
+            layoutBgImageSettings.setVisibility("image".equals(mode) ? View.VISIBLE : View.GONE);
         }
 
-        // ── Shape & size ──
-        customThemeContainer.addView(buildSectionHeader("Shape & size", textCol));
-        customThemeContainer.addView(buildIntStepSelector(
-                "Key corner radius",
-                "How rounded each key looks. 0 = sharp, 28 = pill.",
-                "key_radius_dp", 12,
-                new int[]{0, 4, 8, 12, 16, 20, 28},
-                textCol, bg, accent));
-        customThemeContainer.addView(buildIntStepSelector(
-                "Key text size",
-                "Label size on letter / symbol keys (sp).",
-                "key_text_size_sp", 14,
-                new int[]{10, 12, 14, 16, 18, 20, 22},
-                textCol, bg, accent));
-        customThemeContainer.addView(buildIntStepSelector(
-                "Key border width",
-                "Stroke around each key. 0 hides the border.",
-                "key_stroke_width_dp", 0,
-                new int[]{0, 1, 2, 3, 4},
-                textCol, bg, accent));
-        // Unified colour picker for the stroke — same dialog as the four
-        // theme colours, so the user can pick any colour with alpha.
-        int strokeCol = prefs.getInt("key_stroke_color", 0x00000000);
-        customThemeContainer.addView(
-                buildColorRow("Key border color", "key_stroke_color", strokeCol));
-    }
-
-    /**
-     * One row in the custom-theme panel that opens the background-image
-     * editor. Mirrors {@link #buildColorRow} visually so it slots in
-     * cleanly between the colour rows.
-     */
-    private LinearLayout buildBackgroundImageRow() {
-        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
-        int bg      = prefs.getInt("bg_color",   0xFF1A1A2E);
-        int accent  = prefs.getInt("accent_color", 0xFF00E5FF);
-
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(14), dp(8), dp(14), dp(8));
-        row.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.04f));
-        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        rlp.setMargins(0, 0, 0, dp(2));
-        row.setLayoutParams(rlp);
-
-        // Tiny preview swatch — a thumbnail of the selected image, or a
-        // dashed accent border if nothing is set yet.
-        View swatch = new View(this);
-        String uriStr = prefs.getString(PREF_BG_IMAGE_URI, null);
-        Bitmap thumb = TextUtils.isEmpty(uriStr) ? null : decodeUriThumbnail(uriStr, dp(28));
-        if (thumb != null) {
-            swatch.setBackground(new android.graphics.drawable.BitmapDrawable(getResources(), thumb));
-        } else {
-            android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
-            gd.setColor(blend(bg, 0xFF000000, 0.2f));
-            gd.setStroke(dp(1), accent);
-            gd.setCornerRadius(dp(4));
-            swatch.setBackground(gd);
-        }
-        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(dp(28), dp(28));
-        slp.setMargins(0, 0, dp(10), 0);
-        swatch.setLayoutParams(slp);
-        row.addView(swatch);
-
-        TextView name = new TextView(this);
-        name.setText("Background image");
-        name.setTextSize(13f);
-        name.setTextColor(textCol);
-        name.setLayoutParams(new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        row.addView(name);
-
-        TextView state = new TextView(this);
-        state.setText(TextUtils.isEmpty(uriStr) ? "None" : "Custom");
-        state.setTextSize(11f);
-        state.setTextColor(dim(textCol));
-        state.setPadding(dp(8), 0, dp(8), 0);
-        row.addView(state);
-
-        View.OnClickListener open = v -> showBackgroundImageDialog();
-        row.setOnClickListener(open);
-        swatch.setOnClickListener(open);
-        return row;
-    }
-
-    /**
-     * Background image editor — shows a skeleton keyboard preview overlaid on
-     * the chosen image and lets the user tweak opacity before committing.
-     * The skeleton is a stylised mock of {@link CodeKeysIME}'s actual layout
-     * (suggestion strip + four key rows + spacebar) so users can judge how
-     * legible their picture will be once keys sit on top.
-     */
-    private void showBackgroundImageDialog() {
-        final LinearLayout panel = buildThemedDialogPanel("Background image",
-                "Pick a picture and adjust opacity. The skeleton below shows roughly "
-                        + "how keys will sit on top of it.");
-
-        // Skeleton preview — sized so a phone keyboard's aspect (~3:1) is roughly
-        // preserved. Updated whenever the picker returns or the slider moves.
-        final KeyboardSkeletonPreview preview = new KeyboardSkeletonPreview(this);
-        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(160));
-        plp.setMargins(0, dp(8), 0, dp(8));
-        preview.setLayoutParams(plp);
-        panel.addView(preview);
-
-        // Opacity slider (SeekBar 0..100). 0% means image fully hidden behind
-        // theme colour; 100% means full image alpha.
-        final TextView opacityLabel = new TextView(this);
-        opacityLabel.setTextSize(12f);
-        opacityLabel.setTextColor(prefs.getInt("text_color", 0xFFE8E8FF));
-        panel.addView(opacityLabel);
-
-        final SeekBar opacityBar = new SeekBar(this);
-        opacityBar.setMax(100);
-        int op = Math.max(0, Math.min(100, prefs.getInt(PREF_BG_IMAGE_OPACITY, 70)));
-        opacityBar.setProgress(op);
-        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        blp.setMargins(0, dp(2), 0, dp(8));
-        opacityBar.setLayoutParams(blp);
-        panel.addView(opacityBar);
-
-        // Pick / remove buttons — laid out side by side beneath the slider.
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setPadding(0, dp(4), 0, 0);
-        Button pick = new Button(this);
-        pick.setText("Pick image…");
-        pick.setAllCaps(false);
-        Button clear = new Button(this);
-        clear.setText("Remove image");
-        clear.setAllCaps(false);
-        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        alp.setMargins(0, 0, dp(4), 0);
-        pick.setLayoutParams(alp);
-        LinearLayout.LayoutParams alp2 = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        alp2.setMargins(dp(4), 0, 0, 0);
-        clear.setLayoutParams(alp2);
-        int accent = prefs.getInt("accent_color", 0xFF00E5FF);
-        int bgCol  = prefs.getInt("bg_color",   0xFF1A1A2E);
-        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
-        pick.setBackground(themedRoundedFill(blend(bgCol, accent, 0.18f), accent, dp(10), dp(1)));
-        pick.setTextColor(accent);
-        clear.setBackground(themedRoundedFill(blend(bgCol, 0xFFFFFFFF, 0.05f), dim(textCol), dp(10), dp(1)));
-        clear.setTextColor(textCol);
-        actions.addView(pick);
-        actions.addView(clear);
-        panel.addView(actions);
-
-        // Loader — re-reads the URI from prefs (so the picker callback can
-        // simply persist the URI then trigger this) and pushes the bitmap
-        // into the preview at the current slider position.
-        final Runnable refresh = () -> {
-            String uri = prefs.getString(PREF_BG_IMAGE_URI, null);
-            Bitmap bmp = TextUtils.isEmpty(uri) ? null : decodeUriThumbnail(uri, dp(480));
-            preview.setImage(bmp);
-            preview.setImageOpacity(opacityBar.getProgress());
-            opacityLabel.setText("Opacity: " + opacityBar.getProgress() + "%");
-            clear.setEnabled(!TextUtils.isEmpty(uri));
-            clear.setAlpha(TextUtils.isEmpty(uri) ? 0.5f : 1f);
-        };
-        refresh.run();
-
-        opacityBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar s, int progress, boolean fromUser) {
-                preview.setImageOpacity(progress);
-                opacityLabel.setText("Opacity: " + progress + "%");
-            }
-            @Override public void onStartTrackingTouch(SeekBar s) {}
-            @Override public void onStopTrackingTouch(SeekBar s) {}
-        });
-
-        pick.setOnClickListener(v -> {
-            // Stash the refresh callback so onActivityResult can re-render
-            // the preview without holding a reference to the dialog.
-            pendingBgPreviewRefresh = refresh;
-            try {
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("image/*");
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-                startActivityForResult(intent, REQ_PICK_BG_IMAGE);
-            } catch (android.content.ActivityNotFoundException ex) {
-                // Fall back to legacy gallery intent on devices without SAF.
-                Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
-                fallback.setType("image/*");
-                startActivityForResult(fallback, REQ_PICK_BG_IMAGE);
-            }
-        });
-
-        clear.setOnClickListener(v -> {
-            prefs.edit().remove(PREF_BG_IMAGE_URI).apply();
-            refresh.run();
-        });
-
-        AlertDialog dlg = new AlertDialog.Builder(this)
-                .setView(wrapInScroll(panel))
-                .setPositiveButton("Apply", (d, w) -> {
-                    prefs.edit()
-                            .putInt(PREF_BG_IMAGE_OPACITY, opacityBar.getProgress())
-                            .apply();
-                    // Bumping theme_kind to "custom" so the IME knows to
-                    // honour the picture instead of falling back to a preset.
-                    prefs.edit().putString("theme_kind", "custom").apply();
-                    renderCustomThemePanel(true);
-                    Toast.makeText(this, "Background applied.", Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton("Cancel", null)
-                .setOnDismissListener(d -> pendingBgPreviewRefresh = null)
-                .create();
-        showThemedDialog(dlg);
+        // Update button selected styles for background mode
+        updateBackgroundModeButtons(mode);
     }
 
     /**
@@ -2810,57 +2329,6 @@ public class SettingsActivity extends AppCompatActivity {
         out.addAll(Arrays.asList("GENERAL", "C", "JAVA", "PYTHON", "JS"));
         for (String c : getCustomLanguages()) if (!out.contains(c)) out.add(c);
         return out;
-    }
-
-    // ─── Snippet reference ────────────────────────────────────────────────────
-    private void renderSnippetReference() {
-        snippetRefBox.removeAllViews();
-        int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
-        int accent  = prefs.getInt("accent_color", 0xFF00E5FF);
-
-        String[][] rows = {
-                { "GENERAL", "tab  todo  fixme  note  url" },
-                { "C",       "if  for  while  fn  main  inc  pf  sf" },
-                { "JAVA",    "if  for  forea  while  class  fn  sys  try" },
-                { "PYTHON",  "if  for  forin  while  def  class  print  imp" },
-                { "JS",      "if  for  forea  fn  arrow  const  log  prom" },
-        };
-
-        for (String[] r : rows) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            rlp.setMargins(0, 0, 0, dp(8));
-            row.setLayoutParams(rlp);
-
-            TextView tag = new TextView(this);
-            tag.setText(r[0]);
-            tag.setTextSize(11f);
-            tag.setTextColor(accent);
-            tag.setTypeface(Typeface.MONOSPACE);
-            tag.setLayoutParams(new LinearLayout.LayoutParams(dp(64),
-                    LinearLayout.LayoutParams.WRAP_CONTENT));
-            row.addView(tag);
-
-            TextView snips = new TextView(this);
-            snips.setText(r[1]);
-            snips.setTextSize(11f);
-            snips.setTextColor(dim(textCol));
-            snips.setTypeface(Typeface.MONOSPACE);
-            row.addView(snips);
-
-            snippetRefBox.addView(row);
-        }
-
-        TextView hint = new TextView(this);
-        hint.setText("Tap snippet buttons in the keyboard's snippet row to insert templates. "
-                + "Switch language from the keyboard's ⚙ menu.");
-        hint.setTextSize(11f);
-        hint.setTextColor(dim(textCol));
-        hint.setPadding(0, dp(8), 0, 0);
-        snippetRefBox.addView(hint);
     }
 
     // ─── Color helpers ────────────────────────────────────────────────────────

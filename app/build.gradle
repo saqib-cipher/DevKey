@@ -16,13 +16,13 @@ plugins {
 
 android {
     namespace 'com.codekeys.ime'
-    compileSdk 34
-    buildToolsVersion "34.0.0"
+    compileSdk 35
+    buildToolsVersion "35.0.0"
 
     defaultConfig {
         applicationId "com.codekeys.ime"
-        minSdk 21          // Android 5.0+ support
-        targetSdk 34
+        minSdk 23          // Android 6.0+ support (Required for Material 1.14.0)
+        targetSdk 35
         versionCode 1
         versionName "1.0.0"
     }
@@ -56,9 +56,6 @@ android {
 }
 
 dependencies {
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    // No Material Components — the IME inflates under
-    // Theme.DeviceDefault.InputMethod, which doesn't expose Material attrs,
-    // so all keyboard visuals are produced programmatically (see UIRenderer).
-    // No RecyclerView, no Fragments — Sketchware-compatible.
+    implementation 'androidx.appcompat:appcompat:1.7.1'
+    implementation 'com.google.android.material:material:1.14.0'
 }

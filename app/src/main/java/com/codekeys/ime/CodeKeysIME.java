@@ -19,8 +19,10 @@ import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.text.TextUtils;
+import android.util.SparseArray;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
+import android.view.ViewConfiguration;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -300,6 +302,11 @@ public class CodeKeysIME extends InputMethodService {
         loadAssetOverrides();
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
         audio    = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (audio != null) {
+            try {
+                audio.loadSoundEffects();
+            } catch (Exception ignored) {}
+        }
         currentLang = prefs.getString("lang", "GENERAL");
         inputEngine      = new InputEngine(this);
         suggestionEngine = new SuggestionEngine(prefs);
@@ -314,6 +321,11 @@ public class CodeKeysIME extends InputMethodService {
     public void onDestroy() {
         unregisterSystemClipboardListener();
         unregisterPrefsListener();
+        if (audio != null) {
+            try {
+                audio.unloadSoundEffects();
+            } catch (Exception ignored) {}
+        }
         if (onlineExecutor != null) onlineExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -974,8 +986,9 @@ public class CodeKeysIME extends InputMethodService {
         for (int i = 0; i < rows.length && i < containers.length; i++) {
             for (final String s : rows[i]) {
                 Button btn = ui.makeKey(s, getKeyBgColor(), getKeyTextColor());
-                btn.setOnTouchListener(previewToucher(s));
-                btn.setOnClickListener(v -> { haptic(v); insertSymbolWithAutoClose(s); });
+                btn.setTag(new KeyMetadata(s, false));
+                btn.setOnTouchListener(keyboardTouchListener);
+                btn.setOnLongClickListener(v -> true);
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, 0, 1f);
                 lp.height = LinearLayout.LayoutParams.MATCH_PARENT;
                 int margin = getKeyMargin();
@@ -1071,86 +1084,10 @@ public class CodeKeysIME extends InputMethodService {
         final String label = caps ? letter.toUpperCase() : letter;
 
         Button btn = ui.makeKey(label, getKeyBgColor(), getKeyTextColor());
-        // Closure state for this key's touch lifecycle. Commit fires on DOWN
-        // (Gboard-style) so fast-typing never loses keystrokes to ACTION_CANCEL
-        // or finger drift.
-        final Runnable[] longPressRun = {null};
-        final float[] downXY = {0f, 0f};
-        final int touchSlop = android.view.ViewConfiguration.get(this).getScaledTouchSlop();
+        btn.setTag(new KeyMetadata(letter, isLetter));
+        btn.setOnTouchListener(keyboardTouchListener);
+        btn.setOnLongClickListener(v -> true);
 
-        btn.setOnTouchListener((v, ev) -> {
-            int action = ev.getActionMasked();
-            if (action == MotionEvent.ACTION_DOWN) {
-                showKeyPreview(v, label);
-                haptic(v);
-                downXY[0] = ev.getX();
-                downXY[1] = ev.getY();
-                // Commit on DOWN — Gboard-style. This avoids losing
-                // keystrokes when (a) the user's finger drifts off the key
-                // before lifting, (b) ACTION_UP arrives as ACTION_CANCEL
-                // because a parent ViewGroup intercepted the touch, or
-                // (c) the next key's DOWN cancels this key's UP during
-                // fast multi-touch typing.
-                final String committed = (isLetter && capsState != CAPS_OFF) ? letter.toUpperCase() : letter;
-                commitChar(committed);
-                noteOperation();
-                if (isLetter && capsState == CAPS_SINGLE) {
-                    capsState = CAPS_OFF;
-                    // Defer rebuild to next frame so we don't mutate the
-                    // view tree while still dispatching this touch.
-                    v.post(() -> {
-                        buildQwertyRows();
-                        refreshCapsButtonStyle();
-                    });
-                }
-                // Schedule long-press alt commit (caps swap): backspace the
-                // just-committed char and replace with the swapped-case variant.
-                longPressRun[0] = () -> {
-                    String alt = isLetter
-                            ? (committed.equals(letter.toUpperCase())
-                                    ? letter.toLowerCase()
-                                    : letter.toUpperCase())
-                            : letter;
-                    if (!committed.equals(alt)) {
-                        InputConnection ic = getCurrentInputConnection();
-                        if (ic != null) ic.deleteSurroundingText(committed.length(), 0);
-                        commitChar(alt);
-                        haptic(v);
-                    }
-                };
-                uiHandler.postDelayed(longPressRun[0],
-                        android.view.ViewConfiguration.getLongPressTimeout());
-                return true;
-            } else if (action == MotionEvent.ACTION_MOVE) {
-                // If finger drifts beyond touch slop, cancel pending long-press.
-                if (longPressRun[0] != null
-                        && (Math.abs(ev.getX() - downXY[0]) > touchSlop
-                            || Math.abs(ev.getY() - downXY[1]) > touchSlop)) {
-                    uiHandler.removeCallbacks(longPressRun[0]);
-                    longPressRun[0] = null;
-                }
-                return true;
-            } else if (action == MotionEvent.ACTION_UP
-                    || action == MotionEvent.ACTION_CANCEL) {
-                dismissPreview();
-                if (longPressRun[0] != null) {
-                    uiHandler.removeCallbacks(longPressRun[0]);
-                    longPressRun[0] = null;
-                }
-                return true;
-            }
-            return false;
-        });
-        // Keep the framework long-click as a no-op since we handle long-press
-        // ourselves via the touch listener — the touch listener's `return true`
-        // would otherwise prevent the framework long-click from firing.
-        btn.setOnLongClickListener(v -> {
-            String ch = isLetter
-                ? (caps ? letter.toLowerCase() : letter.toUpperCase())
-                : letter;
-            commitChar(ch);
-            return true;
-        });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, 0, 1f);
         lp.height = LinearLayout.LayoutParams.MATCH_PARENT;
         int margin = getKeyMargin();
@@ -1763,6 +1700,7 @@ public class CodeKeysIME extends InputMethodService {
                     inputEngine.applySuggestion(content);
                     suggestionEngine.learn(content);
                     noteOperation();
+                    refreshSuggestions();
                 });
             }
             rowSuggestions.addView(chip);
@@ -1975,6 +1913,7 @@ public class CodeKeysIME extends InputMethodService {
                     return;
                 }
                 noteDeletion();
+                haptic(btn);
                 long elapsed = System.currentTimeMillis() - startTime[0];
                 long delay = elapsed < 600 ? 70 : (elapsed < 1500 ? 45 : 25);
                 uiHandler.postDelayed(this, delay);
@@ -2008,6 +1947,7 @@ public class CodeKeysIME extends InputMethodService {
                         if (!performBackspaceDeleteWord()) break;
                         wordsDeletedDuringSwipe[0]++;
                         noteDeletion();
+                        haptic(btn);
                     }
                 }
                 return true;
@@ -2034,12 +1974,20 @@ public class CodeKeysIME extends InputMethodService {
      *         hold-to-delete cadence).
      */
     private boolean performBackspaceDelete() {
-        return inputEngine.deleteOne();
+        boolean ok = inputEngine.deleteOne();
+        if (ok && (panelMode == PanelMode.KEYBOARD || panelMode == PanelMode.SYMBOLS)) {
+            refreshSuggestions();
+        }
+        return ok;
     }
 
     /** Word-level analogue of {@link #performBackspaceDelete} for swipe-left. */
     private boolean performBackspaceDeleteWord() {
-        return inputEngine.deleteWord();
+        boolean ok = inputEngine.deleteWord();
+        if (ok && (panelMode == PanelMode.KEYBOARD || panelMode == PanelMode.SYMBOLS)) {
+            refreshSuggestions();
+        }
+        return ok;
     }
 
     // ─── Input helpers ────────────────────────────────────────────────────────
@@ -2075,6 +2023,9 @@ public class CodeKeysIME extends InputMethodService {
                 suggestionEngine.resetBigramContext();
             }
         }
+        if (panelMode == PanelMode.KEYBOARD || panelMode == PanelMode.SYMBOLS) {
+            refreshSuggestions();
+        }
     }
 
     /** Snippet / suggestion / clipboard insertion. Always replaces selection. */
@@ -2098,6 +2049,9 @@ public class CodeKeysIME extends InputMethodService {
             ic.commitText(sym, 1);
         }
         noteOperation();
+        if (panelMode == PanelMode.KEYBOARD || panelMode == PanelMode.SYMBOLS) {
+            refreshSuggestions();
+        }
     }
 
     /** Space tap: commits a space and learns the previous word's frequency. */
@@ -2335,16 +2289,18 @@ public class CodeKeysIME extends InputMethodService {
 
     private View.OnTouchListener previewToucher(final String label) {
         return (v, ev) -> {
-            if (ev.getAction() == MotionEvent.ACTION_DOWN) showKeyPreview(v, label);
-            else if (ev.getAction() == MotionEvent.ACTION_UP
-                    || ev.getAction() == MotionEvent.ACTION_CANCEL)
+            if (ev.getAction() == MotionEvent.ACTION_DOWN) {
+                dismissPreview();
+                activePreview = showKeyPreview(v, label);
+            } else if (ev.getAction() == MotionEvent.ACTION_UP
+                    || ev.getAction() == MotionEvent.ACTION_CANCEL) {
                 uiHandler.postDelayed(this::dismissPreview, 90L);
+            }
             return false;
         };
     }
 
-    private void showKeyPreview(View anchor, String label) {
-        dismissPreview();
+    private PopupWindow showKeyPreview(View anchor, String label) {
         TextView tv = new TextView(this);
         tv.setText(label);
         tv.setTextSize(22f);
@@ -2366,8 +2322,8 @@ public class CodeKeysIME extends InputMethodService {
         int yOffset = -anchor.getHeight() - height + dp(4);
         try {
             pw.showAsDropDown(anchor, -dp(6), yOffset);
-            activePreview = pw;
         } catch (Exception ignored) { /* anchor may be detached */ }
+        return pw;
     }
 
     private void dismissPreview() {
@@ -3053,12 +3009,14 @@ public class CodeKeysIME extends InputMethodService {
                     keyboardInner.setTranslationX(newTx);
                     keyboardInner.setTranslationY(newTy);
                     syncResizeHandlePosition();
+                    requestUpdateInsets();
                     return true;
                 }
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:
                     floatingDragPointerId = -1;
                     persistFloatingPosition();
+                    requestUpdateInsets();
                     return true;
             }
             return false;
@@ -3082,7 +3040,7 @@ public class CodeKeysIME extends InputMethodService {
                     float dx = ev.getRawX() - floatingResizeDownRawX;
                     int minPx = dp(220);
                     int maxPx = Math.min(getResources().getDisplayMetrics().widthPixels,
-                            dp(640));
+                             dp(640));
                     // Resize is bidirectional from the right edge of the inner
                     // panel: dragging right grows it, dragging left shrinks
                     // (factor of 2 because the panel is centred — the
@@ -3094,12 +3052,14 @@ public class CodeKeysIME extends InputMethodService {
                         keyboardInner.setLayoutParams(lp);
                     }
                     keyboardInner.post(this::syncResizeHandlePosition);
+                    requestUpdateInsets();
                     return true;
                 }
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:
                     floatingResizePointerId = -1;
                     persistFloatingWidth();
+                    requestUpdateInsets();
                     return true;
             }
             return false;
@@ -3236,6 +3196,7 @@ public class CodeKeysIME extends InputMethodService {
             }
         }
         keyboardView.requestLayout();
+        requestUpdateInsets();
     }
 
     /**
@@ -3263,6 +3224,30 @@ public class CodeKeysIME extends InputMethodService {
         outInsets.visibleTopInsets = top;
         outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION;
         outInsets.touchableRegion.set(left, top, right, bottom);
+        if (floatingResizeHandle != null && floatingResizeHandle.getVisibility() == View.VISIBLE) {
+            int[] rLoc = new int[2];
+            floatingResizeHandle.getLocationInWindow(rLoc);
+            int rLeft = rLoc[0];
+            int rTop = rLoc[1];
+            int rRight = rLeft + floatingResizeHandle.getWidth();
+            int rBottom = rTop + floatingResizeHandle.getHeight();
+            outInsets.touchableRegion.union(new android.graphics.Rect(rLeft, rTop, rRight, rBottom));
+        }
+    }
+
+    /**
+     * Requests the IME window to re-evaluate its insets. This is critical in
+     * floating mode to ensure the touchable region (the area that intercepts
+     * touches vs letting them pass to the app) matches the panel's current
+     * translation and size.
+     */
+    private void requestUpdateInsets() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            View root = keyboardView;
+            if (root != null && root.isAttachedToWindow()) {
+                root.requestApplyInsets();
+            }
+        }
     }
 
     // ─── PC keys row ─────────────────────────────────────────────────────────
@@ -3410,11 +3395,22 @@ public class CodeKeysIME extends InputMethodService {
     // ─── Haptic / sound ──────────────────────────────────────────────────────
     private void haptic(View v) {
         if (prefs.getBoolean("haptic", true)) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (vibrator != null)
-                    vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                if (vibrator != null) {
+                    try {
+                        vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK));
+                    } catch (Exception ignored) {
+                        vibrator.vibrate(VibrationEffect.createOneShot(15, VibrationEffect.DEFAULT_AMPLITUDE));
+                    }
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (vibrator != null) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(15, VibrationEffect.DEFAULT_AMPLITUDE));
+                }
             } else {
-                v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+                if (v != null) {
+                    v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+                }
             }
         }
         playKeySound(v);
@@ -3464,4 +3460,250 @@ public class CodeKeysIME extends InputMethodService {
                 | ((int)(bgC + (og - bgC) * t) << 8)
                 |  (int)(bb + (ob - bb) * t);
     }
+
+    // ─── Touch and Multitouch Coordinator ───
+    private static class KeyMetadata {
+        final String baseLetter;
+        final boolean isLetter;
+        KeyMetadata(String baseLetter, boolean isLetter) {
+            this.baseLetter = baseLetter;
+            this.isLetter = isLetter;
+        }
+    }
+
+    private static class PointerState {
+        int pointerId;
+        View initialView;
+        View currentView;
+        String label;
+        float downRawX;
+        float downRawY;
+        boolean longPressed;
+        Runnable longPressRunnable;
+        PopupWindow previewPopup;
+    }
+
+    private final SparseArray<PointerState> activePointers = new SparseArray<>();
+
+    private View findViewAtLocation(View root, float screenX, float screenY) {
+        if (root == null || root.getVisibility() != View.VISIBLE) return null;
+        int[] location = new int[2];
+        root.getLocationOnScreen(location);
+        int left = location[0];
+        int top = location[1];
+        int right = left + root.getWidth();
+        int bottom = top + root.getHeight();
+
+        if (screenX >= left && screenX <= right && screenY >= top && screenY <= bottom) {
+            if (root instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) root;
+                for (int i = 0; i < group.getChildCount(); i++) {
+                    View child = group.getChildAt(i);
+                    View match = findViewAtLocation(child, screenX, screenY);
+                    if (match != null) {
+                        return match;
+                    }
+                }
+            }
+            return root;
+        }
+        return null;
+    }
+
+    private void triggerLongPress(View v, String committed, String letter, boolean isLetter) {
+        String alt = isLetter
+                ? (committed.equals(letter.toUpperCase())
+                        ? letter.toLowerCase()
+                        : letter.toUpperCase())
+                : letter;
+        if (!committed.equals(alt)) {
+            commitChar(alt);
+            haptic(v);
+        }
+    }
+
+    private final View.OnTouchListener keyboardTouchListener = new View.OnTouchListener() {
+        @Override
+        public boolean onTouch(View v, MotionEvent ev) {
+            int action = ev.getActionMasked();
+            int actionIndex = ev.getActionIndex();
+            int pointerId = ev.getPointerId(actionIndex);
+
+            // Get absolute screen coordinates of the current event pointer
+            int[] location = new int[2];
+            v.getLocationOnScreen(location);
+            float screenX = location[0] + ev.getX(actionIndex);
+            float screenY = location[1] + ev.getY(actionIndex);
+
+            if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
+                PointerState state = new PointerState();
+                state.pointerId = pointerId;
+                state.initialView = v;
+                state.currentView = v;
+                state.downRawX = screenX;
+                state.downRawY = screenY;
+                state.longPressed = false;
+
+                if (v instanceof Button) {
+                    state.label = ((Button) v).getText().toString();
+                } else {
+                    state.label = "";
+                }
+
+                activePointers.put(pointerId, state);
+
+                // Show preview and play crisp vibration
+                state.previewPopup = showKeyPreview(v, state.label);
+                haptic(v);
+
+                // Schedule long press swap if applicable
+                boolean isLetter = false;
+                String letter = "";
+                if (v.getTag() instanceof KeyMetadata) {
+                    KeyMetadata meta = (KeyMetadata) v.getTag();
+                    isLetter = meta.isLetter;
+                    letter = meta.baseLetter;
+                }
+                
+                final boolean finalIsLetter = isLetter;
+                final String finalLetter = letter;
+                final String finalLabel = state.label;
+                
+                state.longPressRunnable = () -> {
+                    state.longPressed = true;
+                    triggerLongPress(state.initialView, finalLabel, finalLetter, finalIsLetter);
+                };
+                uiHandler.postDelayed(state.longPressRunnable, 
+                        ViewConfiguration.getLongPressTimeout());
+
+                return true;
+
+            } else if (action == MotionEvent.ACTION_MOVE) {
+                int pointerCount = ev.getPointerCount();
+                for (int i = 0; i < pointerCount; i++) {
+                    int pId = ev.getPointerId(i);
+                    PointerState state = activePointers.get(pId);
+                    if (state == null || state.longPressed) continue;
+
+                    // Calculate screen position for this pointer
+                    float pScreenX = location[0] + ev.getX(i);
+                    float pScreenY = location[1] + ev.getY(i);
+
+                    // Cancel long press if finger moved beyond slop
+                    int touchSlop = ViewConfiguration.get(CodeKeysIME.this).getScaledTouchSlop();
+                    if (Math.abs(pScreenX - state.downRawX) > touchSlop || Math.abs(pScreenY - state.downRawY) > touchSlop) {
+                        if (state.longPressRunnable != null) {
+                            uiHandler.removeCallbacks(state.longPressRunnable);
+                            state.longPressRunnable = null;
+                        }
+                    }
+
+                    // Track slide to a new key
+                    if (keyboardView != null) {
+                        View hoverView = findViewAtLocation(keyboardView, pScreenX, pScreenY);
+                        if (hoverView != null && hoverView.getTag() instanceof KeyMetadata) {
+                            if (hoverView != state.currentView) {
+                                // Dismiss old preview
+                                if (state.previewPopup != null) {
+                                    try { state.previewPopup.dismiss(); } catch (Exception ignored) {}
+                                    state.previewPopup = null;
+                                }
+
+                                state.currentView = hoverView;
+                                KeyMetadata meta = (KeyMetadata) hoverView.getTag();
+                                state.label = ((Button) hoverView).getText().toString();
+                                state.previewPopup = showKeyPreview(hoverView, state.label);
+
+                                // Cancel old long press, reschedule for new key
+                                if (state.longPressRunnable != null) {
+                                    uiHandler.removeCallbacks(state.longPressRunnable);
+                                }
+                                final boolean finalIsLetter = meta.isLetter;
+                                final String finalLetter = meta.baseLetter;
+                                final String finalLabel = state.label;
+                                state.longPressRunnable = () -> {
+                                    state.longPressed = true;
+                                    triggerLongPress(hoverView, finalLabel, finalLetter, finalIsLetter);
+                                };
+                                uiHandler.postDelayed(state.longPressRunnable, 
+                                        ViewConfiguration.getLongPressTimeout());
+                            }
+                        } else if (hoverView == null) {
+                            // Off the keyboard entirely
+                            if (state.previewPopup != null) {
+                                try { state.previewPopup.dismiss(); } catch (Exception ignored) {}
+                                state.previewPopup = null;
+                            }
+                            state.currentView = null;
+                            state.label = "";
+                            if (state.longPressRunnable != null) {
+                                uiHandler.removeCallbacks(state.longPressRunnable);
+                                state.longPressRunnable = null;
+                            }
+                        }
+                    }
+                }
+                return true;
+
+            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP) {
+                PointerState state = activePointers.get(pointerId);
+                if (state != null) {
+                    if (state.longPressRunnable != null) {
+                        uiHandler.removeCallbacks(state.longPressRunnable);
+                        state.longPressRunnable = null;
+                    }
+
+                    if (state.previewPopup != null) {
+                        final PopupWindow popupToDismiss = state.previewPopup;
+                        uiHandler.postDelayed(() -> {
+                            try { popupToDismiss.dismiss(); } catch (Exception ignored) {}
+                        }, 90L);
+                        state.previewPopup = null;
+                    }
+
+                    if (!state.longPressed && state.currentView instanceof Button) {
+                        // Commit the character
+                        boolean isLetter = false;
+                        if (state.currentView.getTag() instanceof KeyMetadata) {
+                            isLetter = ((KeyMetadata) state.currentView.getTag()).isLetter;
+                        }
+                        String label = state.label;
+                        
+                        if (panelMode == PanelMode.SYMBOLS) {
+                            insertSymbolWithAutoClose(label);
+                        } else {
+                            commitChar(label);
+                        }
+                        noteOperation();
+
+                        // Handle single caps reset
+                        if (isLetter && capsState == CAPS_SINGLE) {
+                            capsState = CAPS_OFF;
+                            v.post(() -> {
+                                buildQwertyRows();
+                                refreshCapsButtonStyle();
+                            });
+                        }
+                    }
+
+                    activePointers.remove(pointerId);
+                }
+                return true;
+
+            } else if (action == MotionEvent.ACTION_CANCEL) {
+                PointerState state = activePointers.get(pointerId);
+                if (state != null) {
+                    if (state.longPressRunnable != null) {
+                        uiHandler.removeCallbacks(state.longPressRunnable);
+                    }
+                    if (state.previewPopup != null) {
+                        try { state.previewPopup.dismiss(); } catch (Exception ignored) {}
+                    }
+                    activePointers.remove(pointerId);
+                }
+                return true;
+            }
+            return false;
+        }
+    };
 }
