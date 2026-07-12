@@ -35,6 +35,9 @@ import android.app.AlertDialog;
 import android.text.InputType;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.graphics.Insets;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -139,6 +142,7 @@ public class SettingsActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        androidx.activity.EdgeToEdge.enable(this);
         super.onCreate(savedInstanceState);
         // Keep the soft keyboard hidden on launch + theme rebuilds. The
         // settings_root LinearLayout grabs initial focus via
@@ -154,6 +158,14 @@ public class SettingsActivity extends AppCompatActivity {
         // reflects the latest palette without a code change.
         loadAssetThemes();
         setContentView(R.layout.settings_activity);
+        
+        // Handle Edge-to-Edge System Bars Insets
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.settings_scroll), (v, insets) -> {
+            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
+            return insets;
+        });
+
         bindViews();
         applyTheme();
         wireListeners();
@@ -171,7 +183,6 @@ public class SettingsActivity extends AppCompatActivity {
             root.setAlpha(0f);
             root.animate().alpha(1f).setDuration(280L).start();
         }
-        androidx.activity.EdgeToEdge.enable(this);
     }
 
     /**
@@ -1094,120 +1105,50 @@ public class SettingsActivity extends AppCompatActivity {
             final boolean isDark = activeThemeIsDark[i];
             boolean active = !customSelected && (currentBg == theme[0]);
 
-            // Card container — vertical column with a rounded background
-            // showing the theme's actual bg colour so each card previews
-            // itself.
-            LinearLayout card = new LinearLayout(this);
-            card.setOrientation(LinearLayout.VERTICAL);
-            card.setPadding(dp(14), dp(12), dp(14), dp(12));
-            android.graphics.drawable.GradientDrawable cardBg =
-                    new android.graphics.drawable.GradientDrawable();
-            cardBg.setColor(theme[0]);
-            cardBg.setCornerRadius(dp(16));
-            // Active card gets an accent outline so the user sees which
-            // preset is currently applied at a glance.
-            if (active) cardBg.setStroke(dp(2), theme[3]);
-            card.setBackground(cardBg);
-
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                    dp(170), LinearLayout.LayoutParams.WRAP_CONTENT);
-            clp.setMargins(dp(4), dp(4), dp(4), dp(4));
-            card.setLayoutParams(clp);
-
-            // Title row (theme name + active indicator)
-            LinearLayout titleRow = new LinearLayout(this);
-            titleRow.setOrientation(LinearLayout.HORIZONTAL);
-            titleRow.setGravity(Gravity.CENTER_VERTICAL);
-
-            TextView nameView = new TextView(this);
-            nameView.setText(name);
-            nameView.setTextSize(14f);
-            nameView.setTypeface(Typeface.DEFAULT_BOLD);
-            nameView.setTextColor(theme[2]);
-            nameView.setLayoutParams(new LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-            titleRow.addView(nameView);
-
+            com.google.android.material.card.MaterialCardView card = (com.google.android.material.card.MaterialCardView)
+                    getLayoutInflater().inflate(R.layout.theme_card_item, themesContainer, false);
+            
+            card.setCardBackgroundColor(theme[0]);
             if (active) {
-                TextView check = new TextView(this);
-                check.setText("✓");
-                check.setTextSize(13f);
-                check.setTypeface(Typeface.DEFAULT_BOLD);
-                check.setTextColor(theme[3]);
-                titleRow.addView(check);
+                card.setStrokeWidth(dp(2));
+                card.setStrokeColor(theme[3]);
+            } else {
+                card.setStrokeWidth(0);
             }
-            card.addView(titleRow);
 
-            // Tagline: a short description of the theme's mood / palette so
-            // the user gets more than just a name. Pulled from a deterministic
-            // helper so we don't have to maintain a parallel data table.
-            TextView tagline = new TextView(this);
+            TextView nameView = card.findViewById(R.id.theme_name);
+            nameView.setText(name);
+            nameView.setTextColor(theme[2]);
+
+            TextView check = card.findViewById(R.id.theme_check);
+            check.setVisibility(active ? View.VISIBLE : View.GONE);
+            check.setTextColor(theme[3]);
+
+            TextView tagline = card.findViewById(R.id.theme_tagline);
             tagline.setText(themeTagline(name, isDark));
-            tagline.setTextSize(11f);
             tagline.setTextColor(dimColor(theme[2]));
-            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-            tlp.setMargins(0, dp(2), 0, dp(10));
-            tagline.setLayoutParams(tlp);
-            card.addView(tagline);
 
-            // Swatch strip — bg / key / text / accent so the user sees the
-            // exact four colours the preset will apply.
-            LinearLayout swatchRow = new LinearLayout(this);
-            swatchRow.setOrientation(LinearLayout.HORIZONTAL);
-            int[] swatches = { theme[0], theme[1], theme[2], theme[3] };
-            String[] swatchLabels = { "bg", "key", "txt", "acc" };
-            for (int si = 0; si < swatches.length; si++) {
-                LinearLayout col = new LinearLayout(this);
-                col.setOrientation(LinearLayout.VERTICAL);
-                col.setGravity(Gravity.CENTER_HORIZONTAL);
-                LinearLayout.LayoutParams colp = new LinearLayout.LayoutParams(
-                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-                col.setLayoutParams(colp);
+            com.google.android.material.card.MaterialCardView dotBg = card.findViewById(R.id.dot_bg_card);
+            dotBg.setCardBackgroundColor(theme[0]);
+            dotBg.setStrokeColor(dimColor(theme[2]));
 
-                View dot = new View(this);
-                android.graphics.drawable.GradientDrawable dotBg =
-                        new android.graphics.drawable.GradientDrawable();
-                dotBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-                dotBg.setColor(swatches[si]);
-                dotBg.setStroke(dp(1), dimColor(theme[2]));
-                dot.setBackground(dotBg);
-                LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(22), dp(22));
-                dot.setLayoutParams(dlp);
-                col.addView(dot);
+            com.google.android.material.card.MaterialCardView dotKey = card.findViewById(R.id.dot_key_card);
+            dotKey.setCardBackgroundColor(theme[1]);
+            dotKey.setStrokeColor(dimColor(theme[2]));
 
-                TextView lbl = new TextView(this);
-                lbl.setText(swatchLabels[si]);
-                lbl.setTextSize(9f);
-                lbl.setTextColor(dimColor(theme[2]));
-                lbl.setPadding(0, dp(3), 0, 0);
-                col.addView(lbl);
+            com.google.android.material.card.MaterialCardView dotText = card.findViewById(R.id.dot_text_card);
+            dotText.setCardBackgroundColor(theme[2]);
+            dotText.setStrokeColor(dimColor(theme[2]));
 
-                swatchRow.addView(col);
-            }
-            card.addView(swatchRow);
+            com.google.android.material.card.MaterialCardView dotAccent = card.findViewById(R.id.dot_accent_card);
+            dotAccent.setCardBackgroundColor(theme[3]);
+            dotAccent.setStrokeColor(dimColor(theme[2]));
 
-            // Mock "key" preview underneath so the user can see how the
-            // theme's accent will read on a sample button.
-            TextView keyPreview = new TextView(this);
-            keyPreview.setText("Aa");
-            keyPreview.setTextSize(15f);
-            keyPreview.setTypeface(Typeface.DEFAULT_BOLD);
-            keyPreview.setTextColor(theme[2]);
-            keyPreview.setGravity(Gravity.CENTER);
-            keyPreview.setPadding(0, dp(8), 0, dp(8));
-            android.graphics.drawable.GradientDrawable kbg =
-                    new android.graphics.drawable.GradientDrawable();
-            kbg.setColor(theme[1]);
-            kbg.setCornerRadius(dp(8));
-            keyPreview.setBackground(kbg);
-            LinearLayout.LayoutParams klp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-            klp.setMargins(0, dp(10), 0, 0);
-            keyPreview.setLayoutParams(klp);
-            card.addView(keyPreview);
+            com.google.android.material.card.MaterialCardView keyPreviewCard = card.findViewById(R.id.key_preview_card);
+            keyPreviewCard.setCardBackgroundColor(theme[1]);
+
+            TextView keyPreviewText = card.findViewById(R.id.key_preview_text);
+            keyPreviewText.setTextColor(theme[2]);
 
             card.setOnClickListener(v -> {
                 // Selecting a preset applies the FULL theme — colours plus a
@@ -1298,119 +1239,56 @@ public class SettingsActivity extends AppCompatActivity {
      * colour-picker panel; the preset rows remain available so the user can
      * jump back any time.
      */
-    private LinearLayout buildCustomThemeRow(boolean active) {
+    private com.google.android.material.card.MaterialCardView buildCustomThemeRow(boolean active) {
         int bg = prefs.getInt("bg_color", 0xFF1A1A2E);
         int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
         int accent = prefs.getInt("accent_color", 0xFF00E5FF);
         int keyCol = prefs.getInt("key_color", 0xFF252545);
 
-        // Card container — same layout vocabulary as the preset cards so the
-        // strip reads as one consistent set rather than "presets + odd-one-out".
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        android.graphics.drawable.GradientDrawable cardBg =
-                new android.graphics.drawable.GradientDrawable();
-        cardBg.setColor(bg);
-        cardBg.setCornerRadius(dp(16));
-        if (active) cardBg.setStroke(dp(2), accent);
-        card.setBackground(cardBg);
+        com.google.android.material.card.MaterialCardView card = (com.google.android.material.card.MaterialCardView)
+                getLayoutInflater().inflate(R.layout.theme_card_item, themesContainer, false);
 
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                dp(170), LinearLayout.LayoutParams.WRAP_CONTENT);
-        clp.setMargins(dp(4), dp(4), dp(4), dp(4));
-        card.setLayoutParams(clp);
-
-        // Title
-        LinearLayout titleRow = new LinearLayout(this);
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView nameView = new TextView(this);
-        nameView.setText("✎ Custom");
-        nameView.setTextSize(14f);
-        nameView.setTypeface(Typeface.DEFAULT_BOLD);
-        nameView.setTextColor(textCol);
-        nameView.setLayoutParams(new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        titleRow.addView(nameView);
-
+        card.setCardBackgroundColor(bg);
         if (active) {
-            TextView check = new TextView(this);
-            check.setText("✓");
-            check.setTextSize(13f);
-            check.setTypeface(Typeface.DEFAULT_BOLD);
-            check.setTextColor(accent);
-            titleRow.addView(check);
+            card.setStrokeWidth(dp(2));
+            card.setStrokeColor(accent);
+        } else {
+            card.setStrokeWidth(0);
         }
-        card.addView(titleRow);
 
-        TextView tagline = new TextView(this);
+        TextView nameView = card.findViewById(R.id.theme_name);
+        nameView.setText("✎ Custom");
+        nameView.setTextColor(textCol);
+
+        TextView check = card.findViewById(R.id.theme_check);
+        check.setVisibility(active ? View.VISIBLE : View.GONE);
+        check.setTextColor(accent);
+
+        TextView tagline = card.findViewById(R.id.theme_tagline);
         tagline.setText("Pick your own colours");
-        tagline.setTextSize(11f);
         tagline.setTextColor(dimColor(textCol));
-        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        tlp.setMargins(0, dp(2), 0, dp(10));
-        tagline.setLayoutParams(tlp);
-        card.addView(tagline);
 
-        // Swatch strip — same shape as the preset cards. Uses the user's
-        // current custom colours so they see what's saved.
-        LinearLayout swatchRow = new LinearLayout(this);
-        swatchRow.setOrientation(LinearLayout.HORIZONTAL);
-        int[] swatches = { bg, keyCol, textCol, accent };
-        String[] swatchLabels = { "bg", "key", "txt", "acc" };
-        for (int si = 0; si < swatches.length; si++) {
-            LinearLayout col = new LinearLayout(this);
-            col.setOrientation(LinearLayout.VERTICAL);
-            col.setGravity(Gravity.CENTER_HORIZONTAL);
-            LinearLayout.LayoutParams colp = new LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-            col.setLayoutParams(colp);
+        com.google.android.material.card.MaterialCardView dotBg = card.findViewById(R.id.dot_bg_card);
+        dotBg.setCardBackgroundColor(bg);
+        dotBg.setStrokeColor(dimColor(textCol));
 
-            View dot = new View(this);
-            android.graphics.drawable.GradientDrawable dotBg =
-                    new android.graphics.drawable.GradientDrawable();
-            dotBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-            dotBg.setColor(swatches[si]);
-            dotBg.setStroke(dp(1), dimColor(textCol));
-            dot.setBackground(dotBg);
-            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(22), dp(22));
-            dot.setLayoutParams(dlp);
-            col.addView(dot);
+        com.google.android.material.card.MaterialCardView dotKey = card.findViewById(R.id.dot_key_card);
+        dotKey.setCardBackgroundColor(keyCol);
+        dotKey.setStrokeColor(dimColor(textCol));
 
-            TextView lbl = new TextView(this);
-            lbl.setText(swatchLabels[si]);
-            lbl.setTextSize(9f);
-            lbl.setTextColor(dimColor(textCol));
-            lbl.setPadding(0, dp(3), 0, 0);
-            col.addView(lbl);
+        com.google.android.material.card.MaterialCardView dotText = card.findViewById(R.id.dot_text_card);
+        dotText.setCardBackgroundColor(textCol);
+        dotText.setStrokeColor(dimColor(textCol));
 
-            swatchRow.addView(col);
-        }
-        card.addView(swatchRow);
+        com.google.android.material.card.MaterialCardView dotAccent = card.findViewById(R.id.dot_accent_card);
+        dotAccent.setCardBackgroundColor(accent);
+        dotAccent.setStrokeColor(dimColor(textCol));
 
-        // Mock key preview — same as preset cards.
-        TextView keyPreview = new TextView(this);
-        keyPreview.setText("Aa");
-        keyPreview.setTextSize(15f);
-        keyPreview.setTypeface(Typeface.DEFAULT_BOLD);
-        keyPreview.setTextColor(textCol);
-        keyPreview.setGravity(Gravity.CENTER);
-        keyPreview.setPadding(0, dp(8), 0, dp(8));
-        android.graphics.drawable.GradientDrawable kbg =
-                new android.graphics.drawable.GradientDrawable();
-        kbg.setColor(keyCol);
-        kbg.setCornerRadius(dp(8));
-        keyPreview.setBackground(kbg);
-        LinearLayout.LayoutParams klp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        klp.setMargins(0, dp(10), 0, 0);
-        keyPreview.setLayoutParams(klp);
-        card.addView(keyPreview);
+        com.google.android.material.card.MaterialCardView keyPreviewCard = card.findViewById(R.id.key_preview_card);
+        keyPreviewCard.setCardBackgroundColor(keyCol);
+
+        TextView keyPreviewText = card.findViewById(R.id.key_preview_text);
+        keyPreviewText.setTextColor(textCol);
 
         card.setOnClickListener(v -> {
             prefs.edit().putString("theme_kind", "custom").apply();
@@ -1933,22 +1811,11 @@ public class SettingsActivity extends AppCompatActivity {
         String current = prefs.getString("lang", "GENERAL");
         for (final String lang : getAllLanguages()) {
             boolean sel = lang.equals(current);
-            Button btn = new Button(this);
+            com.google.android.material.button.MaterialButton btn = (com.google.android.material.button.MaterialButton)
+                    getLayoutInflater().inflate(R.layout.language_chip_item, langButtonsRow, false);
             btn.setText(lang);
-            btn.setAllCaps(false);
-            btn.setTextSize(12f);
             btn.setTextColor(sel ? accent : textCol);
             btn.setBackgroundColor(sel ? blend(bg, accent, 0.22f) : blend(bg, 0xFFFFFFFF, 0.05f));
-            // Wrap_content width so each button is sized to its label — long
-            // names like "TYPESCRIPT" no longer get truncated and short ones
-            // ("C") don't waste space. Horizontal scrolling is provided by the
-            // surrounding HorizontalScrollView in settings_activity.xml.
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, dp(44));
-            lp.setMargins(dp(2), 0, dp(2), 0);
-            btn.setLayoutParams(lp);
-            btn.setMinWidth(dp(56));
-            btn.setPadding(dp(14), 0, dp(14), 0);
             btn.setOnClickListener(v -> {
                 prefs.edit().putString("lang", lang).apply();
                 Toast.makeText(this, "Default: " + lang, Toast.LENGTH_SHORT).show();
@@ -1965,7 +1832,6 @@ public class SettingsActivity extends AppCompatActivity {
     private void renderCustomLanguages() {
         customLangList.removeAllViews();
         int textCol = prefs.getInt("text_color", 0xFFE8E8FF);
-        int bg      = prefs.getInt("bg_color",   0xFF1A1A2E);
         int accent  = prefs.getInt("accent_color", 0xFF00E5FF);
 
         editNewLang.setTextColor(textCol);
@@ -1977,55 +1843,28 @@ public class SettingsActivity extends AppCompatActivity {
             hint.setText("No custom presets yet. Add one above, then tap “Snippets…” to fill it in.");
             hint.setTextSize(11f);
             hint.setTextColor(dim(textCol));
+            hint.setPadding(dp(4), dp(4), dp(4), dp(12));
             customLangList.addView(hint);
         }
 
         for (final String name : custom) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.05f));
-            row.setPadding(dp(12), dp(10), dp(8), dp(10));
-            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            rlp.setMargins(0, 0, 0, dp(2));
-            row.setLayoutParams(rlp);
-
-            TextView nameView = new TextView(this);
+            View row = getLayoutInflater().inflate(R.layout.custom_language_row_item, customLangList, false);
+            
+            TextView nameView = row.findViewById(R.id.custom_lang_name);
             int snippetCount = loadCustomSnippets(name).size();
             nameView.setText(name + "  ·  " + snippetCount + " snippet" + (snippetCount == 1 ? "" : "s"));
-            nameView.setTextSize(13f);
             nameView.setTextColor(textCol);
-            nameView.setLayoutParams(new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            row.addView(nameView);
 
-            Button edit = new Button(this);
-            edit.setText("Snippets…");
-            edit.setAllCaps(false);
-            edit.setTextSize(11f);
-            edit.setTextColor(accent);
-            edit.setBackgroundColor(blend(bg, accent, 0.15f));
-            edit.setPadding(dp(10), 0, dp(10), 0);
-            LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            elp.setMarginEnd(dp(6));
-            edit.setLayoutParams(elp);
-            edit.setOnClickListener(v -> showSnippetEditor(name));
-            row.addView(edit);
+            com.google.android.material.button.MaterialButton editBtn = row.findViewById(R.id.btn_edit_snippets);
+            editBtn.setTextColor(accent);
+            editBtn.setOnClickListener(v -> showSnippetEditor(name));
 
-            Button rm = new Button(this);
-            rm.setText("Remove");
-            rm.setAllCaps(false);
-            rm.setTextSize(11f);
-            rm.setTextColor(0xFFFF6666);
-            rm.setBackgroundColor(0x22FF0000);
+            View rm = row.findViewById(R.id.btn_remove_lang);
             rm.setOnClickListener(v -> {
                 removeCustomLanguage(name);
                 renderCustomLanguages();
                 renderLanguages();
             });
-            row.addView(rm);
 
             customLangList.addView(row);
         }
@@ -2037,38 +1876,24 @@ public class SettingsActivity extends AppCompatActivity {
         header.setTextSize(11f);
         header.setTextColor(dim(textCol));
         header.setTypeface(Typeface.DEFAULT_BOLD);
-        header.setPadding(0, dp(14), 0, dp(6));
+        header.setPadding(dp(4), dp(16), 0, dp(6));
         customLangList.addView(header);
 
         for (final String name : Arrays.asList("GENERAL", "C", "JAVA", "PYTHON", "JS")) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setBackgroundColor(blend(bg, 0xFFFFFFFF, 0.03f));
-            row.setPadding(dp(12), dp(8), dp(8), dp(8));
-            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            rlp.setMargins(0, 0, 0, dp(2));
-            row.setLayoutParams(rlp);
-
-            TextView nv = new TextView(this);
+            View row = getLayoutInflater().inflate(R.layout.custom_language_row_item, customLangList, false);
+            
+            TextView nv = row.findViewById(R.id.custom_lang_name);
             int extra = loadCustomSnippets(name).size();
             nv.setText(name + (extra > 0 ? "  ·  +" + extra + " custom" : ""));
-            nv.setTextSize(12f);
             nv.setTextColor(textCol);
-            nv.setLayoutParams(new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            row.addView(nv);
 
-            Button edit = new Button(this);
-            edit.setText("Snippets…");
-            edit.setAllCaps(false);
-            edit.setTextSize(11f);
-            edit.setTextColor(accent);
-            edit.setBackgroundColor(blend(bg, accent, 0.10f));
-            edit.setPadding(dp(10), 0, dp(10), 0);
-            edit.setOnClickListener(v -> showSnippetEditor(name));
-            row.addView(edit);
+            com.google.android.material.button.MaterialButton editBtn = row.findViewById(R.id.btn_edit_snippets);
+            editBtn.setTextColor(accent);
+            editBtn.setOnClickListener(v -> showSnippetEditor(name));
+
+            // Hide Remove button for built-in languages
+            row.findViewById(R.id.btn_remove_lang).setVisibility(View.GONE);
+
             customLangList.addView(row);
         }
     }
