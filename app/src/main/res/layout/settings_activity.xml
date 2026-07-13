@@ -66,7 +66,7 @@
                 style="@style/Widget.Material3.Button.IconButton"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:text="?"
+                app:icon="@drawable/user_question"
                 android:textSize="16sp"
                 android:textStyle="bold"
                 android:textColor="#00E5FF"
@@ -136,19 +136,29 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <EditText
-                    android:id="@+id/edit_preview"
+                <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:hint="Type here to test..."
-                    android:textColor="#F2F2FF"
-                    android:textColorHint="#6A6A85"
-                    android:background="#121216"
-                    android:padding="12dp"
-                    android:textSize="14sp"
-                    android:minLines="2"
-                    android:gravity="top|start"
-                    android:inputType="textMultiLine|textCapSentences" />
+                    app:hintTextColor="#00E5FF"
+                    app:boxStrokeColor="#00E5FF"
+                    app:boxBackgroundColor="#121216"
+                    app:boxCornerRadiusTopStart="12dp"
+                    app:boxCornerRadiusTopEnd="12dp"
+                    app:boxCornerRadiusBottomStart="12dp"
+                    app:boxCornerRadiusBottomEnd="12dp"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/edit_preview"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="#F2F2FF"
+                        android:textSize="14sp"
+                        android:minLines="2"
+                        android:gravity="top|start"
+                        android:inputType="textMultiLine|textCapSentences" />
+                </com.google.android.material.textfield.TextInputLayout>
 
                 <Button
                     android:id="@+id/btn_clear_preview"
@@ -445,39 +455,6 @@
                     android:textStyle="bold"
                     android:paddingBottom="8dp" />
 
-                <!-- Background Color Row -->
-                <LinearLayout
-                    android:id="@+id/color_row_bg"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:padding="10dp"
-                    android:background="#121216"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:layout_marginBottom="4dp">
-                    <View
-                        android:id="@+id/swatch_bg"
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
-                        android:layout_marginEnd="12dp"
-                        android:background="#1A1A2E" />
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:text="Keyboard Background"
-                        android:textColor="#F2F2FF"
-                        android:textSize="13sp" />
-                    <TextView
-                        android:id="@+id/text_bg_hex"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="#1A1A2E"
-                        android:textColor="#9494B5"
-                        android:textSize="12sp" />
-                </LinearLayout>
 
                 <!-- Key Surface Color Row -->
                 <LinearLayout
@@ -487,16 +464,19 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:padding="10dp"
-                    android:background="#121216"
+                    android:background="@drawable/item_top"
                     android:clickable="true"
                     android:focusable="true"
                     android:layout_marginBottom="4dp">
-                    <View
+                    <com.google.android.material.card.MaterialCardView
                         android:id="@+id/swatch_key"
                         android:layout_width="24dp"
                         android:layout_height="24dp"
                         android:layout_marginEnd="12dp"
-                        android:background="#252545" />
+                        app:cardElevation="0dp"
+                        app:cardCornerRadius="12dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="#1FFFFFFF" />
                     <TextView
                         android:layout_width="0dp"
                         android:layout_weight="1"
@@ -521,16 +501,19 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:padding="10dp"
-                    android:background="#121216"
+                    android:background="@drawable/item_mid"
                     android:clickable="true"
                     android:focusable="true"
                     android:layout_marginBottom="4dp">
-                    <View
+                    <com.google.android.material.card.MaterialCardView
                         android:id="@+id/swatch_text"
                         android:layout_width="24dp"
                         android:layout_height="24dp"
                         android:layout_marginEnd="12dp"
-                        android:background="#E8E8FF" />
+                        app:cardElevation="0dp"
+                        app:cardCornerRadius="12dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="#1FFFFFFF" />
                     <TextView
                         android:layout_width="0dp"
                         android:layout_weight="1"
@@ -555,16 +538,19 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:padding="10dp"
-                    android:background="#121216"
+                    android:background="@drawable/item_bottom"
                     android:clickable="true"
                     android:focusable="true"
                     android:layout_marginBottom="8dp">
-                    <View
+                    <com.google.android.material.card.MaterialCardView
                         android:id="@+id/swatch_accent"
                         android:layout_width="24dp"
                         android:layout_height="24dp"
                         android:layout_marginEnd="12dp"
-                        android:background="#00E5FF" />
+                        app:cardElevation="0dp"
+                        app:cardCornerRadius="12dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="#1FFFFFFF" />
                     <TextView
                         android:layout_width="0dp"
                         android:layout_weight="1"
@@ -650,6 +636,44 @@
                         android:layout_marginStart="2dp" />
                 </LinearLayout>
 
+                <!-- Keyboard Background (Solid Mode Selector) -->
+                <LinearLayout
+                    android:id="@+id/color_row_bg"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="10dp"
+                    android:background="@drawable/item_mid"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:layout_marginBottom="8dp"
+                    android:visibility="gone">
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/swatch_bg"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_marginEnd="12dp"
+                        app:cardElevation="0dp"
+                        app:cardCornerRadius="12dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="#1FFFFFFF" />
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:text="Keyboard Background"
+                        android:textColor="#F2F2FF"
+                        android:textSize="13sp" />
+                    <TextView
+                        android:id="@+id/text_bg_hex"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="#1A1A2E"
+                        android:textColor="#9494B5"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
                 <!-- Gradient settings container -->
                 <LinearLayout
                     android:id="@+id/layout_bg_gradient_settings"
@@ -665,16 +689,19 @@
                         android:orientation="horizontal"
                         android:gravity="center_vertical"
                         android:padding="10dp"
-                        android:background="#121216"
+                        android:background="@drawable/item_top"
                         android:clickable="true"
                         android:focusable="true"
                         android:layout_marginBottom="4dp">
-                        <View
+                        <com.google.android.material.card.MaterialCardView
                             android:id="@+id/swatch_gradient_start"
                             android:layout_width="24dp"
                             android:layout_height="24dp"
                             android:layout_marginEnd="12dp"
-                            android:background="#1A1A2E" />
+                            app:cardElevation="0dp"
+                            app:cardCornerRadius="12dp"
+                            app:strokeWidth="1dp"
+                            app:strokeColor="#1FFFFFFF" />
                         <TextView
                             android:layout_width="0dp"
                             android:layout_weight="1"
@@ -697,15 +724,18 @@
                         android:orientation="horizontal"
                         android:gravity="center_vertical"
                         android:padding="10dp"
-                        android:background="#121216"
+                        android:background="@drawable/item_bottom"
                         android:clickable="true"
                         android:focusable="true">
-                        <View
+                        <com.google.android.material.card.MaterialCardView
                             android:id="@+id/swatch_gradient_end"
                             android:layout_width="24dp"
                             android:layout_height="24dp"
                             android:layout_marginEnd="12dp"
-                            android:background="#000000" />
+                            app:cardElevation="0dp"
+                            app:cardCornerRadius="12dp"
+                            app:strokeWidth="1dp"
+                            app:strokeColor="#1FFFFFFF" />
                         <TextView
                             android:layout_width="0dp"
                             android:layout_weight="1"
@@ -844,16 +874,19 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:padding="10dp"
-                    android:background="#121216"
+                    android:background="@drawable/item_mid"
                     android:clickable="true"
                     android:focusable="true"
                     android:layout_marginTop="8dp">
-                    <View
+                    <com.google.android.material.card.MaterialCardView
                         android:id="@+id/swatch_stroke"
                         android:layout_width="24dp"
                         android:layout_height="24dp"
                         android:layout_marginEnd="12dp"
-                        android:background="#00000000" />
+                        app:cardElevation="0dp"
+                        app:cardCornerRadius="12dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="#1FFFFFFF" />
                     <TextView
                         android:layout_width="0dp"
                         android:layout_weight="1"
@@ -983,7 +1016,7 @@
                         android:hint="e.g. RUST"
                         android:textColor="#F2F2FF"
                         android:textColorHint="#6A6A85"
-                        android:background="#121216"
+                        android:background="@drawable/item_mid"
                         android:padding="10dp"
                         android:textSize="13sp"
                         android:maxLines="1"

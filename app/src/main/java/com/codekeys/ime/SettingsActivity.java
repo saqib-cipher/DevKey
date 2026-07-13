@@ -110,14 +110,14 @@ public class SettingsActivity extends AppCompatActivity {
     private com.google.android.material.card.MaterialCardView customThemeCard;
     private LinearLayout skeletonPreviewPlaceholder;
     private LinearLayout colorRowBg, colorRowKey, colorRowText, colorRowAccent, colorRowStroke;
-    private View swatchBg, swatchKey, swatchText, swatchAccent, swatchStroke;
+    private com.google.android.material.card.MaterialCardView swatchBg, swatchKey, swatchText, swatchAccent, swatchStroke;
     private TextView textBgHex, textKeyHex, textTextHex, textAccentHex, textStrokeHex;
 
     // Background Mode Buttons & Settings Layouts
     private Button btnModeSolid, btnModeGradient, btnModeImage;
     private LinearLayout layoutBgGradientSettings, layoutBgImageSettings;
     private LinearLayout colorRowGradientStart, colorRowGradientEnd;
-    private View swatchGradientStart, swatchGradientEnd;
+    private com.google.android.material.card.MaterialCardView swatchGradientStart, swatchGradientEnd;
     private TextView textGradientStartHex, textGradientEndHex;
     private Button btnPickBgImage, btnClearBgImage;
 
@@ -999,32 +999,32 @@ public class SettingsActivity extends AppCompatActivity {
         int gradStart = prefs.getInt("kb_bg_gradient_start", bg);
         int gradEnd = prefs.getInt("kb_bg_gradient_end", blend(bg, 0xFF000000, 0.30f));
 
-        if (swatchBg != null) swatchBg.setBackgroundColor(bg);
+        if (swatchBg != null) swatchBg.setCardBackgroundColor(bg);
         if (textBgHex != null) textBgHex.setText("#" + String.format("%08X", bg));
 
-        if (swatchKey != null) swatchKey.setBackgroundColor(keyCol);
+        if (swatchKey != null) swatchKey.setCardBackgroundColor(keyCol);
         if (textKeyHex != null) textKeyHex.setText("#" + String.format("%08X", keyCol));
 
-        if (swatchText != null) swatchText.setBackgroundColor(textCol);
+        if (swatchText != null) swatchText.setCardBackgroundColor(textCol);
         if (textTextHex != null) textTextHex.setText("#" + String.format("%08X", textCol));
 
-        if (swatchAccent != null) swatchAccent.setBackgroundColor(accent);
+        if (swatchAccent != null) swatchAccent.setCardBackgroundColor(accent);
         if (textAccentHex != null) textAccentHex.setText("#" + String.format("%08X", accent));
 
         if (swatchStroke != null) {
             if ((strokeCol >>> 24) == 0) {
-                swatchStroke.setBackgroundColor(0x00000000);
+                swatchStroke.setCardBackgroundColor(0x00000000);
                 textStrokeHex.setText("None");
             } else {
-                swatchStroke.setBackgroundColor(strokeCol);
+                swatchStroke.setCardBackgroundColor(strokeCol);
                 textStrokeHex.setText("#" + String.format("%08X", strokeCol));
             }
         }
 
-        if (swatchGradientStart != null) swatchGradientStart.setBackgroundColor(gradStart);
+        if (swatchGradientStart != null) swatchGradientStart.setCardBackgroundColor(gradStart);
         if (textGradientStartHex != null) textGradientStartHex.setText("#" + String.format("%08X", gradStart));
 
-        if (swatchGradientEnd != null) swatchGradientEnd.setBackgroundColor(gradEnd);
+        if (swatchGradientEnd != null) swatchGradientEnd.setCardBackgroundColor(gradEnd);
         if (textGradientEndHex != null) textGradientEndHex.setText("#" + String.format("%08X", gradEnd));
     }
 
@@ -1324,6 +1324,9 @@ public class SettingsActivity extends AppCompatActivity {
 
         // Toggle background mode views
         String mode = prefs.getString("kb_bg_mode", "solid");
+        if (colorRowBg != null) {
+            colorRowBg.setVisibility("solid".equals(mode) ? View.VISIBLE : View.GONE);
+        }
         if (layoutBgGradientSettings != null) {
             layoutBgGradientSettings.setVisibility("gradient".equals(mode) ? View.VISIBLE : View.GONE);
         }
