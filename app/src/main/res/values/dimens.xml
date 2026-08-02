@@ -21,17 +21,16 @@
     <dimen name="keyboard_root_padding_bottom">5dp</dimen>
     <dimen name="keyboard_elevation">3dp</dimen>
 
-    <!-- Row heights (baseline — scaled at runtime). Tuned to Gboard's
-         default phone layout: shorter letter rows so the keyboard
-         occupies less of the screen when the user opts in to "Match
-         Gboard" sizing via the height-scale slider. -->
-    <dimen name="row_suggestion_height">40dp</dimen>
-    <dimen name="row_pc_keys_height">36dp</dimen>
-    <dimen name="row_symbol_height">40dp</dimen>
-    <dimen name="row_snippet_height">36dp</dimen>
-    <dimen name="row_number_height">38dp</dimen>
-    <dimen name="row_letter_height">52dp</dimen>
-    <dimen name="row_nav_height">52dp</dimen>
+    <!-- Row heights (baseline — scaled at runtime). Sized for a comfortable,
+         professional touch target: letter rows are generous and the action row
+         gets extra height so the space / enter keys are easy to hit. -->
+    <dimen name="row_suggestion_height">42dp</dimen>
+    <dimen name="row_pc_keys_height">38dp</dimen>
+    <dimen name="row_symbol_height">44dp</dimen>
+    <dimen name="row_snippet_height">42dp</dimen>
+    <dimen name="row_number_height">42dp</dimen>
+    <dimen name="row_letter_height">58dp</dimen>
+    <dimen name="row_nav_height">56dp</dimen>
 
     <!-- Key sizing & spacing — tighter margins so adjacent keys read as a
          continuous strip the way Gboard does, with rounded corners. -->
@@ -39,18 +38,18 @@
     <dimen name="key_padding_h">4dp</dimen>
     <dimen name="key_padding_v">3dp</dimen>
     <dimen name="key_margin">3dp</dimen>
-    <dimen name="key_letter_text_size">20sp</dimen>
+    <dimen name="key_letter_text_size">22sp</dimen>
 
     <!-- Special keys (caps / backspace / nav row).
          Backspace / shift are 1.4× a normal key so they line up under the
          bottom row of the QWERTY block — same proportion Gboard uses. -->
-    <dimen name="key_special_width">44dp</dimen>
-    <dimen name="key_backspace_width">50dp</dimen>
+    <dimen name="key_special_width">48dp</dimen>
+    <dimen name="key_backspace_width">56dp</dimen>
     <!-- Bottom action row keys: trimmed so the space bar can claim more width. -->
-    <dimen name="key_action_width">36dp</dimen>
-    <dimen name="key_undo_width">30dp</dimen>
-    <dimen name="key_arrow_width">26dp</dimen>
-    <dimen name="key_enter_width">52dp</dimen>
+    <dimen name="key_action_width">42dp</dimen>
+    <dimen name="key_undo_width">34dp</dimen>
+    <dimen name="key_arrow_width">30dp</dimen>
+    <dimen name="key_enter_width">58dp</dimen>
 
     <!-- Chips — slightly taller so they read as proper Gboard-style pills. -->
     <dimen name="chip_corner_radius">18dp</dimen>

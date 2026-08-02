@@ -288,8 +288,8 @@
                     android:id="@+id/slider_keyboard_height"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:valueFrom="50"
-                    android:valueTo="150"
+                    android:valueFrom="70"
+                    android:valueTo="110"
                     android:stepSize="5"
                     app:labelBehavior="floating" />
 
@@ -388,6 +388,72 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
                 </LinearLayout>
+
+                <!-- Show PC keys switch -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="12dp">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Show PC keys row"
+                            android:textColor="#F2F2FF"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Esc / Tab / Ctrl / Alt modifier keys"
+                            android:textColor="#9494B5"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_show_pc_keys"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <!-- Gboard style bottom row switch -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingBottom="12dp">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Gboard-Style bottom row"
+                            android:textColor="#F2F2FF"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Comma / period around space, single cursor button"
+                            android:textColor="#9494B5"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_gboard_style_row"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -844,7 +910,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:valueFrom="10"
-                    android:valueTo="22"
+                    android:valueTo="28"
                     android:stepSize="2"
                     app:labelBehavior="floating" />
 
@@ -901,47 +967,6 @@
                         android:text="None"
                         android:textColor="#9494B5"
                         android:textSize="12sp" />
-                </LinearLayout>
-
-                <!-- Show PC keys switch -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingTop="12dp"
-                    android:paddingBottom="12dp">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:text="Show PC keys row"
-                        android:textColor="#F2F2FF"
-                        android:textSize="14sp" />
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/switch_show_pc_keys"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" />
-                </LinearLayout>
-
-                <!-- Gboard style bottom row switch -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingBottom="12dp">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:text="Gboard-Style bottom row"
-                        android:textColor="#F2F2FF"
-                        android:textSize="14sp" />
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/switch_gboard_style_row"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" />
                 </LinearLayout>
 
             </LinearLayout>

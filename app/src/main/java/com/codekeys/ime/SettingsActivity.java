@@ -329,6 +329,28 @@ public class SettingsActivity extends AppCompatActivity {
         });
     }
 
+    /**
+     * Wires the "Keyboard Height (%)" slider to BOTH the slider pref the IME
+     * reads ({@code keyboard_height_pct}, an int 50–150) and the legacy float
+     * ({@code key_height_scale}) so the setting takes effect no matter which
+     * key a user's install has from earlier versions.
+     */
+    private void setupKeyboardHeightSlider() {
+        if (sliderKeyboardHeight == null) return;
+        int seed = prefs.getInt("keyboard_height_pct",
+                Math.round(prefs.getFloat("key_height_scale", 1.0f) * 100f));
+        sliderKeyboardHeight.setValue(seed);
+        sliderKeyboardHeight.addOnChangeListener((s, value, fromUser) -> {
+            if (fromUser) {
+                prefs.edit()
+                        .putInt("keyboard_height_pct", (int) value)
+                        .putFloat("key_height_scale", value / 100f)
+                        .apply();
+                renderCustomThemePanel(true);
+            }
+        });
+    }
+
     private void pickColor(String title, String key, View swatch, TextView hexText) {
         showColorPickerDialog(title, key);
     }
@@ -370,9 +392,9 @@ public class SettingsActivity extends AppCompatActivity {
 
         // Setup sliders
         setupSlider(sliderKeySoundVolume, "key_sound_volume", 50);
-        setupSlider(sliderKeyboardHeight, "keyboard_height_pct", 100);
+        setupKeyboardHeightSlider();
         setupSlider(sliderKeyRadius, "key_radius_dp", 12);
-        setupSlider(sliderKeyTextSize, "key_text_size_sp", 14);
+        setupSlider(sliderKeyTextSize, "key_text_size_sp", 18);
         setupSlider(sliderKeyStrokeWidth, "key_stroke_width_dp", 0);
         setupSlider(sliderBgImageOpacity, PREF_BG_IMAGE_OPACITY, 70);
 

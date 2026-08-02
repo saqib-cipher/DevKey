@@ -388,6 +388,7 @@ public class CodeKeysIME extends InputMethodService {
                             || panelMode == PanelMode.SYMBOLS
                             || panelMode == PanelMode.EMOJI)) {
                     buildQwertyRows();
+                    if (rowNumbers != null) buildNumberRow();
                     if (rowSymbols != null)  buildSymbolRow();
                     if (rowSnippets != null) buildSnippetRow();
                 }
@@ -407,6 +408,7 @@ public class CodeKeysIME extends InputMethodService {
                 buildPcKeysRow();
                 applySuggestionVisibility();
                 break;
+            case "keyboard_height_pct":
             case "key_height_scale":
                 applyKeyboardHeight();
                 break;
@@ -557,6 +559,46 @@ public class CodeKeysIME extends InputMethodService {
         bindFloatingHandles();
         buildPcKeysRow();
 
+        keyboardView.setOnApplyWindowInsetsListener((v, insets) -> {
+            boolean floating = prefs != null && prefs.getBoolean("floating", false);
+            if (keyboardInner != null) {
+                if (!floating) {
+                    // Clear the bottom system area so no key ever sits under the
+                    // navigation bar, the gesture-navigation pill, or the screen's
+                    // edge swipe zones. We take the largest reported inset so
+                    // both 3-button and gesture navigation get a safe gutter.
+                    int navigationInset = 0;
+                    int gestureInset = 0;
+                    int mandatoryGestureInset = 0;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        navigationInset = insets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom;
+                        gestureInset = insets.getInsets(android.view.WindowInsets.Type.systemGestures()).bottom;
+                        mandatoryGestureInset = insets.getInsets(android.view.WindowInsets.Type.mandatorySystemGestures()).bottom;
+                    } else {
+                        navigationInset = insets.getSystemWindowInsetBottom();
+                    }
+                    int systemBottom =
+                            Math.max(navigationInset, Math.max(gestureInset, mandatoryGestureInset));
+                    int defaultBottomPadding = v.getResources().getDimensionPixelSize(R.dimen.keyboard_root_padding_bottom);
+                    int bottomPadding = Math.max(defaultBottomPadding, systemBottom);
+                    keyboardInner.setPadding(
+                            keyboardInner.getPaddingLeft(),
+                            keyboardInner.getPaddingTop(),
+                            keyboardInner.getPaddingRight(),
+                            bottomPadding
+                    );
+                } else {
+                    keyboardInner.setPadding(
+                            keyboardInner.getPaddingLeft(),
+                            keyboardInner.getPaddingTop(),
+                            keyboardInner.getPaddingRight(),
+                            0
+                    );
+                }
+            }
+            return insets;
+        });
+
         // Reset cached panel views so new theme/scale settings are applied to
         // freshly-inflated children.
         keyboardPanelView = null;
@@ -589,6 +631,7 @@ public class CodeKeysIME extends InputMethodService {
             updateEnterButton(info);
             switchPanel(PanelMode.KEYBOARD);
             applyTheme();
+            requestUpdateInsets();
             refreshHistoryButtonsState();
             refreshArrowButtonsState();
         }
@@ -2300,30 +2343,48 @@ public class CodeKeysIME extends InputMethodService {
         };
     }
 
+    /**
+     * Lightweight, cached key-preview popup. The popup and its label are
+     * created once and just re-shown with a new label, so fast typing never
+     * allocates a fresh window / view tree per keystroke (a real source of
+     * input lag on lower-end devices).
+     */
+    private TextView previewLabel;
+
     private PopupWindow showKeyPreview(View anchor, String label) {
-        TextView tv = new TextView(this);
-        tv.setText(label);
-        tv.setTextSize(22f);
-        tv.setTypeface(Typeface.DEFAULT_BOLD);
-        tv.setTextColor(getKeyTextColor());
-        tv.setGravity(Gravity.CENTER);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(blend(getKeyBgColor(), getAccentColor(), 0.25f));
-        bg.setCornerRadius(dp(16));
-        bg.setStroke(dp(1), blend(getAccentColor(), 0xFFFFFFFF, 0.2f));
-        tv.setBackground(bg);
-        tv.setPadding(dp(12), dp(8), dp(12), dp(8));
+        if (previewLabel == null) {
+            previewLabel = new TextView(this);
+            previewLabel.setTextSize(20f);
+            previewLabel.setTypeface(Typeface.DEFAULT_BOLD);
+            previewLabel.setTextColor(getKeyTextColor());
+            previewLabel.setGravity(Gravity.CENTER);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(blend(getKeyBgColor(), getAccentColor(), 0.25f));
+            bg.setCornerRadius(dp(16));
+            bg.setStroke(dp(1), blend(getAccentColor(), 0xFFFFFFFF, 0.2f));
+            previewLabel.setPadding(dp(12), dp(8), dp(12), dp(8));
+            previewLabel.setBackground(bg);
+        }
+        previewLabel.setText(label);
         int width  = Math.max(anchor.getWidth() + dp(12), dp(48));
         int height = anchor.getHeight() + dp(28);
-        PopupWindow pw = new PopupWindow(tv, width, height, false);
-        pw.setOutsideTouchable(false);
-        pw.setTouchable(false);
-        pw.setFocusable(false);
         int yOffset = -anchor.getHeight() - height + dp(4);
         try {
-            pw.showAsDropDown(anchor, -dp(6), yOffset);
+            if (activePreview == null) {
+                activePreview = new PopupWindow(previewLabel, width, height, false);
+                activePreview.setOutsideTouchable(false);
+                activePreview.setTouchable(false);
+                activePreview.setFocusable(false);
+            }
+            if (activePreview.isShowing()) {
+                activePreview.update(anchor, -dp(6), yOffset, width, height);
+            } else {
+                activePreview.setWidth(width);
+                activePreview.setHeight(height);
+                activePreview.showAsDropDown(anchor, -dp(6), yOffset);
+            }
         } catch (Exception ignored) { /* anchor may be detached */ }
-        return pw;
+        return activePreview;
     }
 
     private void dismissPreview() {
@@ -2916,9 +2977,18 @@ public class CodeKeysIME extends InputMethodService {
 
     /** Returns the user-configured key-height multiplier, clamped to a sensible band. */
     private float getHeightScale() {
-        float raw = prefs.getFloat("key_height_scale", 1.0f);
+        // The settings panel drives this from its "Keyboard Height (%)" slider
+        // (70–110 → 0.7–1.1). Older builds stored the float directly under
+        // key_height_scale, so fall back to that when the slider key is absent.
+        float raw;
+        int pct = prefs.getInt("keyboard_height_pct", -1);
+        if (pct >= 0) {
+            raw = pct / 100f;
+        } else {
+            raw = prefs.getFloat("key_height_scale", 1.0f);
+        }
         if (raw < 0.7f) raw = 0.7f;
-        if (raw > 1.6f) raw = 1.6f;
+        if (raw > 1.1f) raw = 1.1f;
         return raw;
     }
 
@@ -2932,18 +3002,35 @@ public class CodeKeysIME extends InputMethodService {
         // Baseline heights mirror res/values/dimens.xml so the runtime scale
         // multiplies against the same numbers the layout XML starts with.
         // Keep these in sync with row_*_height in dimens.xml.
-        scaleViewHeight(rowSuggestions, 40, scale);
-        scaleViewHeight(pcKeysScroll, 36, scale);
+        scaleViewHeight(rowSuggestions, 42, scale);
+        scaleViewHeight(pcKeysScroll, 38, scale);
         if (panelMode == PanelMode.KEYBOARD || panelMode == PanelMode.SYMBOLS) {
-            // Keyboard rows — match Gboard-tight baseline.
-            scaleViewHeight(keyboardPanelView != null ? keyboardPanelView.findViewById(R.id.symbol_scroll) : null, 40, scale);
-            scaleViewHeight(keyboardPanelView != null ? keyboardPanelView.findViewById(R.id.snippet_scroll) : null, 36, scale);
-            scaleViewHeight(rowNumbers, 38, scale);
-            scaleViewHeight(rowLetters1, 52, scale);
-            scaleViewHeight(rowLetters2, 52, scale);
-            scaleViewHeight(keyboardPanelView != null ? keyboardPanelView.findViewById(R.id.row_letters3_wrap) : null, 52, scale);
+            // Keyboard rows — baseline is taller so keys feel generous.
+            scaleViewHeight(keyboardPanelView != null ? keyboardPanelView.findViewById(R.id.symbol_scroll) : null, 44, scale);
+            scaleViewHeight(keyboardPanelView != null ? keyboardPanelView.findViewById(R.id.snippet_scroll) : null, 42, scale);
+            scaleViewHeight(rowNumbers, 42, scale);
+            scaleViewHeight(rowLetters1, 58, scale);
+            scaleViewHeight(rowLetters2, 58, scale);
+            scaleViewHeight(keyboardPanelView != null ? keyboardPanelView.findViewById(R.id.row_letters3_wrap) : null, 58, scale);
+            // The symbol/snippet keys are fixed-size buttons; scale them too
+            // so they stay proportional to the (now-scaled) row height instead
+            // of leaving an empty gutter around smaller keys.
+            scaleRowKeys(rowSymbols, 38, 38, scale);
+            scaleRowKeys(rowSnippets, 56, 34, scale);
         }
-        scaleViewHeight(keyboardView != null ? keyboardView.findViewById(R.id.row_nav) : null, 52, scale);
+        scaleViewHeight(keyboardView != null ? keyboardView.findViewById(R.id.row_nav) : null, 56, scale);
+    }
+
+    private void scaleRowKeys(LinearLayout row, int baseW, int baseH, float scale) {
+        if (row == null) return;
+        for (int i = 0; i < row.getChildCount(); i++) {
+            View child = row.getChildAt(i);
+            ViewGroup.LayoutParams lp = child.getLayoutParams();
+            if (lp == null) continue;
+            lp.width  = Math.round(dp(baseW) * scale);
+            lp.height = Math.round(dp(baseH) * scale);
+            child.setLayoutParams(lp);
+        }
     }
 
     private void scaleViewHeight(View v, int baseDp, float scale) {
@@ -2959,6 +3046,8 @@ public class CodeKeysIME extends InputMethodService {
     // floating panel is centred on its own translation, so the user can drag
     // it anywhere on screen via the top grab-bar.
     private static final int[] FLOATING_WIDTH_PRESETS_DP = {280, 340, 400};
+    /** Default height above the bottom edge for a freshly-enabled floating panel. */
+    private static final int FLOATING_DEFAULT_ELEVATION_DP = 40;
     /** Tracks the active touch's pointer id for the drag-handle. We use only
      *  this pointer's coordinates so a second finger landing on a key while
      *  dragging doesn't yank the panel. */
@@ -3003,9 +3092,20 @@ public class CodeKeysIME extends InputMethodService {
                     float dy = ev.getRawY() - floatingDragDownRawY;
                     float newTx = floatingDragStartTx + dx;
                     float newTy = floatingDragStartTy + dy;
-                    // Clamp Y so the panel can't be dragged off-screen
-                    // upwards beyond the IME window's available area.
-                    newTy = Math.min(0f, newTy); // 0 == bottom-anchored docked position
+                    // Keep the panel fully inside the IME window: it can't be
+                    // dragged below the docked position, above the window's top
+                    // edge, or off either horizontal edge.
+                    int rootW = keyboardView.getWidth();
+                    int rootH = keyboardView.getHeight();
+                    int innerW = keyboardInner.getWidth();
+                    int innerH = keyboardInner.getHeight();
+                    if (rootW > 0 && innerW > 0) {
+                        float halfSlack = (rootW - innerW) / 2f;
+                        newTx = Math.max(-halfSlack, Math.min(halfSlack, newTx));
+                    }
+                    if (rootH > 0 && innerH > 0) {
+                        newTy = Math.max(-(rootH - innerH), Math.min(0f, newTy));
+                    }
                     keyboardInner.setTranslationX(newTx);
                     keyboardInner.setTranslationY(newTy);
                     syncResizeHandlePosition();
@@ -3089,13 +3189,16 @@ public class CodeKeysIME extends InputMethodService {
         int rootW  = keyboardView.getWidth();
         int innerW = keyboardInner.getWidth();
         if (rootW <= 0 || innerW <= 0) return;
+        // The resize handle is anchored bottom|end with a 6dp margin, so its
+        // default right/bottom edges sit 6dp in from the root's. Compensate so
+        // the handle sits exactly on the inner panel's bottom-right corner.
+        int handleInset = dp(6);
         // Inner is centred horizontally → its right edge is rootW/2 + innerW/2 + tx.
-        // Resize handle is anchored to root's right edge, so subtract its
-        // current right offset to get the translation needed.
         float innerRightEdge = (rootW + innerW) / 2f + keyboardInner.getTranslationX();
-        float handleRightEdge = rootW;
+        float handleRightEdge = rootW - handleInset;
         floatingResizeHandle.setTranslationX(innerRightEdge - handleRightEdge);
-        floatingResizeHandle.setTranslationY(keyboardInner.getTranslationY());
+        // Inner is bottom-anchored → its bottom edge is rootH + ty.
+        floatingResizeHandle.setTranslationY(keyboardInner.getTranslationY() + handleInset);
     }
 
     private void persistFloatingPosition() {
@@ -3164,12 +3267,16 @@ public class CodeKeysIME extends InputMethodService {
                 keyboardInner.setLayoutParams(flp);
             }
 
-            // Restore persisted translation.
+            // Restore persisted translation, or default to a raised position
+            // so the panel visibly floats above the bottom edge on first use.
+            float defaultTy = -dp(FLOATING_DEFAULT_ELEVATION_DP);
             keyboardInner.setTranslationX(prefs.getFloat("floating_x", 0f));
-            keyboardInner.setTranslationY(prefs.getFloat("floating_y", 0f));
+            keyboardInner.setTranslationY(prefs.getFloat("floating_y", defaultTy));
 
+            // Floating keyboard sits above the nav bar — drop the gutter that
+            // the docked mode leaves for navigation/gesture insets.
             keyboardInner.setPadding(dp(4), keyboardInner.getPaddingTop(),
-                    dp(4), keyboardInner.getPaddingBottom());
+                    dp(4), 0);
 
             // Wait for layout pass to read the inner's measured width before
             // aligning the resize handle.
@@ -3194,6 +3301,14 @@ public class CodeKeysIME extends InputMethodService {
                 floatingResizeHandle.setTranslationX(0f);
                 floatingResizeHandle.setTranslationY(0f);
             }
+            // Restore the default gutter — the insets listener will refine it
+            // on the next dispatch, but this keeps the row off the nav bar
+            // even if that dispatch is delayed.
+            keyboardInner.setPadding(keyboardInner.getPaddingLeft(),
+                    keyboardInner.getPaddingTop(),
+                    keyboardInner.getPaddingRight(),
+                    keyboardView.getResources().getDimensionPixelSize(
+                            R.dimen.keyboard_root_padding_bottom));
         }
         keyboardView.requestLayout();
         requestUpdateInsets();
@@ -3242,11 +3357,9 @@ public class CodeKeysIME extends InputMethodService {
      * translation and size.
      */
     private void requestUpdateInsets() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            View root = keyboardView;
-            if (root != null && root.isAttachedToWindow()) {
-                root.requestApplyInsets();
-            }
+        View root = keyboardView;
+        if (root != null && root.isAttachedToWindow()) {
+            root.requestApplyInsets();
         }
     }
 
@@ -3369,7 +3482,7 @@ public class CodeKeysIME extends InputMethodService {
     }
     /** User-configurable label text size for letter / symbol keys (sp). */
     float getKeyTextSizeSp() {
-        int v = prefs.getInt("key_text_size_sp", 18);
+        int v = prefs.getInt("key_text_size_sp", 20);
         if (v < 8) v = 8;
         if (v > 32) v = 32;
         return (float) v;
@@ -3603,15 +3716,11 @@ public class CodeKeysIME extends InputMethodService {
                         View hoverView = findViewAtLocation(keyboardView, pScreenX, pScreenY);
                         if (hoverView != null && hoverView.getTag() instanceof KeyMetadata) {
                             if (hoverView != state.currentView) {
-                                // Dismiss old preview
-                                if (state.previewPopup != null) {
-                                    try { state.previewPopup.dismiss(); } catch (Exception ignored) {}
-                                    state.previewPopup = null;
-                                }
-
                                 state.currentView = hoverView;
                                 KeyMetadata meta = (KeyMetadata) hoverView.getTag();
                                 state.label = ((Button) hoverView).getText().toString();
+                                // Cached popup: update in place so sliding
+                                // across keys stays flicker-free and fast.
                                 state.previewPopup = showKeyPreview(hoverView, state.label);
 
                                 // Cancel old long press, reschedule for new key
@@ -3625,7 +3734,7 @@ public class CodeKeysIME extends InputMethodService {
                                     state.longPressed = true;
                                     triggerLongPress(hoverView, finalLabel, finalLetter, finalIsLetter);
                                 };
-                                uiHandler.postDelayed(state.longPressRunnable, 
+                                uiHandler.postDelayed(state.longPressRunnable,
                                         ViewConfiguration.getLongPressTimeout());
                             }
                         } else if (hoverView == null) {

@@ -79,6 +79,11 @@ final class UIRenderer {
         btn.setAllCaps(false);
         btn.setMinHeight(0);
         btn.setMinWidth(0);
+        // The IME drives haptics / clicks centrally on ACTION_DOWN; disabling
+        // the platform-side effects keeps key response snappy and avoids
+        // double-feedback (two vibrations / two clicks) per tap.
+        btn.setSoundEffectsEnabled(false);
+        btn.setHapticFeedbackEnabled(false);
         btn.setBackground(roundedFill(bgColor,
                 ime.dp(ime.getKeyRadiusDp()),
                 ime.dp(ime.getKeyStrokeWidthDp()),
@@ -113,6 +118,8 @@ final class UIRenderer {
         btn.setLayoutParams(lp);
         btn.setMinHeight(0);
         btn.setMinWidth(0);
+        btn.setSoundEffectsEnabled(false);
+        btn.setHapticFeedbackEnabled(false);
         return btn;
     }
 
@@ -316,6 +323,8 @@ final class UIRenderer {
                 btn.setPadding(0, 0, 0, 0);
                 btn.setMinHeight(0);
                 btn.setMinWidth(0);
+                btn.setSoundEffectsEnabled(false);
+                btn.setHapticFeedbackEnabled(false);
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
                 int m = ime.getKeyMargin();
                 lp.setMargins(m, m, m, m);
